@@ -60,7 +60,10 @@ function TalkPanel() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              patient_id: parameters.patient_id,
+              // The tool schema only carries raw_text, so patient_id comes
+              // from this session's own state rather than from the agent —
+              // the model should never invent a patient identifier.
+              patient_id: parameters.patient_id ?? patientId,
               raw_text: parameters.raw_text,
             }),
           });
