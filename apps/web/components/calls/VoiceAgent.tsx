@@ -124,7 +124,10 @@ function TalkPanel() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              patient_id: parameters.patient_id,
+              // Same reasoning as save_scheduling_intent: fall back to this
+              // session's patientId so a tool schema without a patient_id
+              // parameter can't send undefined and 422 the backend.
+              patient_id: parameters.patient_id ?? patientId,
               slot_id: Number(parameters.slot_id),
             }),
           });
