@@ -216,3 +216,23 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+```
+# --- Node / Next.js (apps/web) ---
+.eslintcache
+next-env.d.ts
+.vercel/
+
+# --- Env & secrets ---
+.env.production
+.env.development
+.env.staging
+
+# --- OS / Editor ---
+Thumbs.db
+*.swp
+*.swo
+
+# --- Misc ---
+logs/
+```
