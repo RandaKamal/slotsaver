@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>SlotSaver — Nemotron Playground</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; max-width: 1000px; margin: 2rem auto; padding: 0 1rem; background: #0f1115; color: #e6e6e6; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.2rem; }
+  .subtitle { color: #888; font-size: 0.85rem; margin-top: 0; }
+  h2 { font-size: 1.05rem; margin: 0 0 1rem 0; }
+  h3 { font-size: 0.9rem; color: #bbb; margin: 1rem 0 0.3rem; }
+
+  .tabs { display: flex; gap: 0.4rem; margin: 1.5rem 0 0; border-bottom: 1px solid #2a2d34; }
+  .tab-btn { background: none; border: none; color: #888; padding: 0.6rem 1rem; cursor: pointer; font-size: 0.9rem; border-bottom: 2px solid transparent; }
+  .tab-btn.active { color: #fff; border-bottom-color: #4f8cff; }
+  .tab-panel { display: none; background: #1a1d24; border-radius: 0 8px 8px 8px; padding: 1.25rem; margin-bottom: 1.5rem; }
+  .tab-panel.active { display: block; }
+
+  label { display: block; font-size: 0.8rem; margin-top: 0.6rem; color: #999; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; padding: 0.45rem; margin-top: 0.2rem; background: #10131a; color: #eee;
+    border: 1px solid #333; border-radius: 4px; font-family: inherit; box-sizing: border-box;
+  }
+  textarea.mono { font-family: "SF Mono", Consolas, monospace; font-size: 0.8rem; }
+  input[type=checkbox] { width: auto; margin-right: 0.4rem; }
+  .checkbox-row { display: flex; align-items: center; margin-top: 0.6rem; font-size: 0.85rem; color: #ccc; }
+
+  button { margin-top: 0.9rem; padding: 0.5rem 1rem; background: #4f8cff; color: white; border: none;
+    border-radius: 4px; cursor: pointer; font-size: 0.85rem; margin-right: 0.5rem; }
+  button:hover { background: #3a72e0; }
+  button.secondary { background: #333; }
+  button.secondary:hover { background: #444; }
+  button.danger { background: #6b2b2b; }
+  button.danger:hover { background: #832f2f; }
+
+  pre { background: #10131a; padding: 0.8rem; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; font-size: 0.8rem; }
+  .row { display: flex; gap: 1rem; }
+  .row > div { flex: 1; }
+
+  .candidate-card { border: 1px solid #2a2d34; border-radius: 6px; padding: 0.75rem; margin-top: 0.6rem; background: #14171d; }
+  .candidate-card .row label { margin-top: 0.3rem; }
+  .candidate-header { display: flex; justify-content: space-between; align-items: center; }
+  .candidate-header strong { font-size: 0.85rem; }
+
+  .result-candidate { padding: 0.6rem; border: 1px solid #2a2d34; border-radius: 4px; margin-top: 0.4rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+  .result-candidate.top { border-color: #4f8cff; background: #161b25; }
+  .result-candidate .meta { font-size: 0.8rem; color: #999; }
+  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 3px; font-size: 0.75rem; background: #2a2d34; white-space: nowrap; }
+  .badge.good { background: #1f5c33; color: #baf0c8; }
+
+  .bench-bar-track { background: #2a2d34; border-radius: 4px; height: 22px; margin-top: 0.3rem; overflow: hidden; }
+  .bench-bar-fill { height: 100%; display: flex; align-items: center; padding-left: 0.5rem; font-size: 0.75rem; color: #0a0a0a; font-weight: 600; }
+  .bench-fifo { background: #d97b7b; }
+  .bench-nemotron { background: #6bd9a0; }
+
+  table.bench-table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.8rem; }
+  table.bench-table th, table.bench-table td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #2a2d34; }
+  .ok { color: #6bd9a0; } .bad { color: #d97b7b; }
+
+  .hint { color: #777; font-size: 0.78rem; margin-top: 0.4rem; }
+</style>
+</head>
+<body>
+
+<h1>SlotSaver — Nemotron Playground</h1>
+<p class="subtitle">Internal dev tool for testing the AI harness with freeform scenarios. Not the real dashboard (Zaid's apps/web owns that).</p>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="showTab('extract')">1 · Extract Preferences</button>
+  <button class="tab-btn" onclick="showTab('rank')">2 · Build a Scenario &amp; Rank</button>
+  <button class="tab-btn" onclick="showTab('recover')">3 · Run the Recovery Flow</button>
+  <button class="tab-btn" onclick="showTab('evaluate')">4 · Evaluate (Benchmark)</button>
+</div>
+
+<!-- TAB 1: EXTRACT -->
+<div id="tab-extract" class="tab-panel active">
+  <h2>Extract structured preferences from any transcript you type</h2>
+  <p class="hint">Write whatever a patient might plausibly say — nuanced, ambiguous, contradictory. See what Nemotron pulls out.</p>
+  <label>Patient ID (just a label for this test)</label>
+  <input type="text" id="pref-patient" value="test_patient" />
+  <label>Transcript</label>
+  <textarea id="pref-transcript" rows="3">Book me Friday at 2, but if anything earlier opens this week, afternoons are best, not Tuesday, and I prefer Sarah but anyone is okay.</textarea>
+  <button onclick="extractPreferences()">Run extraction</button>
+  <pre id="pref-output">Output will appear here.</pre>
+</div>
+
+<!-- TAB 2: BUILD SCENARIO -->
+<div id="tab-rank" class="tab-panel">
+  <h2>Build any open slot + any set of candidates</h2>
+  <p class="hint">Nothing here is pre-decided — add as many candidates as you want with whatever preferences you want, then rank them. This is the actual creative testing surface.</p>
+
+  <h3>Open slot</h3>
+  <div class="row">
+    <div><label>Appointment type</label><input type="text" id="slot-type" value="follow-up" /></div>
+    <div><label>Provider</label><input type="text" id="slot-provider" value="Dr. Lee" /></div>
+  </div>
+  <div class="row">
+    <div><label>Start time (ISO)</label><input type="text" id="slot-time" value="2026-09-24T14:00:00" /></div>
+    <div><label>Duration (min)</label><input type="number" id="slot-duration" value="30" /></div>
+  </div>
+
+  <h3>Candidates</h3>
+  <div id="candidate-builder"></div>
+  <button class="secondary" onclick="addCandidateRow()">+ Add candidate</button>
+  <button class="secondary" onclick="loadSamplePatients()">Load 3 sample patients</button>
+
+  <div style="margin-top:1rem;">
+    <button onclick="rankScenario()">Rank this scenario with Nemotron</button>
+  </div>
+  <pre id="rank-output">Output will appear here.</pre>
+</div>
+
+<!-- TAB 3: FULL RECOVERY FLOW -->
+<div id="tab-recover" class="tab-panel">
+  <h2>Run the full outreach → decline → incentive flow</h2>
+  <p class="hint">Rank a scenario in tab 2 first, or click below to create a plan from your current candidate list. Then simulate declines and watch it escalate to the incentive stage.</p>
+  <button onclick="createPlanFromBuilder()">Create recovery plan from current scenario</button>
+  <p id="current-plan-id" class="badge" style="display:none;"></p>
+  <div id="candidate-list"></div>
+  <div id="plan-buttons" style="display:none;">
+    <button onclick="respond('declined')">Top candidate declines</button>
+    <button class="secondary" onclick="respond('accepted')">Top candidate accepts</button>
+    <button class="danger" onclick="triggerIncentive()">Queue exhausted → trigger incentive stage</button>
+  </div>
+  <pre id="plan-detail-output">Output will appear here.</pre>
+</div>
+
+<!-- TAB 4: EVALUATE -->
+<div id="tab-evaluate" class="tab-panel">
+  <h2>RecoveryBench — Nemotron vs FIFO baseline</h2>
+  <p class="hint">Runs 5 hand-labeled synthetic scenarios (apps/api/tests/fixtures/benchmark_cases.json) through both a naive FIFO picker and Nemotron's ranker, and checks top-1 accuracy against ground truth. This is the actual evaluation — add more labeled cases to that file for a bigger sample.</p>
+  <button onclick="runBenchmark()">Run benchmark</button>
+  <div id="bench-summary"></div>
+  <div id="bench-table"></div>
+</div>
+
+<script>
+let candidateCount = 0;
+let currentPlanId = null;
+
+function showTab(name) {
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById("tab-" + name).classList.add("active");
+  event.target.classList.add("active");
+}
+
+function addCandidateRow(preset) {
+  candidateCount++;
+  const id = candidateCount;
+  const wrapper = document.createElement("div");
+  wrapper.className = "candidate-card";
+  wrapper.id = `candidate-${id}`;
+  const p = preset || {};
+  const sp = p.soft_preferences || {};
+  wrapper.innerHTML = `
+    <div class="candidate-header">
+      <strong>Candidate</strong>
+      <button class="danger" style="margin:0; padding:0.2rem 0.6rem;" onclick="document.getElementById('candidate-${id}').remove()">remove</button>
+    </div>
+    <div class="row">
+      <div><label>Patient ID</label><input type="text" class="c-id" value="${p.patient_id || 'patient_' + id}" /></div>
+      <div><label>Preferred provider (blank = none)</label><input type="text" class="c-provider" value="${sp.preferred_provider || ''}" /></div>
+    </div>
+    <div class="row">
+      <div><label>Preferred time ranges (comma-separated: morning, afternoon, evening)</label><input type="text" class="c-times" value="${(sp.preferred_time_ranges || []).join(', ')}" /></div>
+      <div><label>Days since last contacted</label><input type="number" class="c-lastcontact" value="${p.last_contacted_days_ago ?? 10}" /></div>
+    </div>
+    <div class="row">
+      <div><label>Recent declines</label><input type="number" class="c-declines" value="${p.recent_declines ?? 0}" /></div>
+      <div></div>
+    </div>
+    <div class="checkbox-row"><input type="checkbox" class="c-flexible" ${sp.provider_flexible !== false ? 'checked' : ''}/> Flexible on provider</div>
+    <div class="checkbox-row"><input type="checkbox" class="c-earlier" ${p.earlier_if_possible ? 'checked' : ''}/> Wants an earlier slot if possible</div>
+  `;
+  document.getElementById("candidate-builder").appendChild(wrapper);
+}
+
+function loadSamplePatients() {
+  document.getElementById("candidate-builder").innerHTML = "";
+  addCandidateRow({ patient_id: "patient_A", soft_preferences: { preferred_time_ranges: ["morning"], provider_flexible: true }, last_contacted_days_ago: 3, recent_declines: 0 });
+  addCandidateRow({ patient_id: "patient_B", soft_preferences: { preferred_time_ranges: ["afternoon"], preferred_provider: "Dr. Lee", provider_flexible: false }, earlier_if_possible: true, last_contacted_days_ago: 20, recent_declines: 0 });
+  addCandidateRow({ patient_id: "patient_C", soft_preferences: { preferred_time_ranges: ["evening"], provider_flexible: true }, last_contacted_days_ago: 15, recent_declines: 1 });
+}
+
+function readOpenSlot() {
+  return {
+    appointment_type: document.getElementById("slot-type").value,
+    provider: document.getElementById("slot-provider").value,
+    start_time: document.getElementById("slot-time").value,
+    duration_minutes: Number(document.getElementById("slot-duration").value),
+  };
+}
+
+function readCandidatesFromBuilder() {
+  return [...document.querySelectorAll(".candidate-card")].map(card => ({
+    patient_id: card.querySelector(".c-id").value,
+    soft_preferences: {
+      preferred_time_ranges: card.querySelector(".c-times").value.split(",").map(s => s.trim()).filter(Boolean),
+      preferred_provider: card.querySelector(".c-provider").value || null,
+      provider_flexible: card.querySelector(".c-flexible").checked,
+    },
+    earlier_if_possible: card.querySelector(".c-earlier").checked,
+    last_contacted_days_ago: Number(card.querySelector(".c-lastcontact").value),
+    recent_declines: Number(card.querySelector(".c-declines").value),
+  }));
+}
+
+async function extractPreferences() {
+  const patient_id = document.getElementById("pref-patient").value;
+  const transcript = document.getElementById("pref-transcript").value;
+  const res = await fetch("/api/preferences/extract", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ patient_id, transcript })
+  });
+  document.getElementById("pref-output").textContent = JSON.stringify(await res.json(), null, 2);
+}
+
+async function rankScenario() {
+  const candidates = readCandidatesFromBuilder();
+  if (candidates.length === 0) {
+    document.getElementById("rank-output").textContent = "Add at least one candidate first.";
+    return;
+  }
+  const res = await fetch("/api/recovery/plan", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ open_slot: readOpenSlot(), candidates })
+  });
+  const plan = await res.json();
+  document.getElementById("rank-output").textContent = JSON.stringify(plan, null, 2);
+}
+
+async function createPlanFromBuilder() {
+  const candidates = readCandidatesFromBuilder();
+  if (candidates.length === 0) {
+    document.getElementById("plan-detail-output").textContent = "Go to tab 2 and add candidates first.";
+    return;
+  }
+  const res = await fetch("/api/recovery/plan", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ open_slot: readOpenSlot(), candidates })
+  });
+  const plan = await res.json();
+  currentPlanId = plan.plan_id;
+  document.getElementById("plan-buttons").style.display = "block";
+  const badge = document.getElementById("current-plan-id");
+  badge.style.display = "inline-block";
+  renderPlan(plan);
+}
+
+function renderPlan(plan) {
+  document.getElementById("current-plan-id").textContent = `${plan.plan_id} — stage: ${plan.stage}, status: ${plan.status}`;
+  const list = document.getElementById("candidate-list");
+  list.innerHTML = "";
+  plan.ranked_candidate_ids.forEach((pid, i) => {
+    const c = plan.candidates.find(c => c.patient_id === pid);
+    const div = document.createElement("div");
+    div.className = "result-candidate" + (i === plan.current_candidate_index ? " top" : "");
+
+    const left = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = (i === plan.current_candidate_index ? "-> " : "") + pid;
+    const reason = document.createElement("div");
+    reason.className = "meta";
+    reason.textContent = c ? c.reason : "";
+    left.append(title, reason);
+
+    const badge = document.createElement("span");
+    badge.className = "badge" + (i === plan.current_candidate_index ? " good" : "");
+    badge.textContent = `score ${c ? c.match_score.toFixed(2) : "?"}`;
+
+    div.append(left, badge);
+    list.appendChild(div);
+  });
+  document.getElementById("plan-detail-output").textContent = JSON.stringify(plan, null, 2);
+}
+
+async function respond(response) {
+  if (!currentPlanId) return;
+  const res = await fetch(`/api/recovery/${currentPlanId}/response`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ response })
+  });
+  renderPlan(await res.json());
+}
+
+async function triggerIncentive() {
+  if (!currentPlanId) return;
+  const res = await fetch(`/api/recovery/${currentPlanId}/incentive`, { method: "POST" });
+  renderPlan(await res.json());
+}
+
+const BASELINE_LABELS = {
+  fifo: "FIFO (naive)",
+  nemotron: "Nemotron",
+  mistral_nemotron: "Mistral-Nemotron (open source)",
+  gemini: "Gemini",
+  claude: "Claude",
+};
+const BASELINE_COLORS = {
+  fifo: "#d97b7b",
+  nemotron: "#6bd9a0",
+  mistral_nemotron: "#e0c56b",
+  gemini: "#6ba8e0",
+  claude: "#c47be0",
+};
+
+async function runBenchmark() {
+  document.getElementById("bench-summary").textContent = "Running all baselines concurrently...";
+  document.getElementById("bench-table").innerHTML = "";
+  const startedAt = performance.now();
+  const res = await fetch("/api/benchmark/run");
+  const data = await res.json();
+  const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
+
+  const baselineNames = Object.keys(data.accuracy);
+
+  const summary = document.getElementById("bench-summary");
+  summary.innerHTML = "";
+  const timing = document.createElement("p");
+  timing.className = "hint";
+  timing.textContent = `Completed in ${elapsed}s (all case x baseline calls run in parallel).`;
+  summary.appendChild(timing);
+
+  baselineNames.forEach(name => {
+    const acc = data.accuracy[name];
+    const wrap = document.createElement("div");
+    const label = document.createElement("h3");
+    label.textContent = acc === null
+      ? `${BASELINE_LABELS[name] || name}: skipped (no API key set)`
+      : `${BASELINE_LABELS[name] || name}: ${(acc * 100).toFixed(0)}%`;
+    wrap.appendChild(label);
+    if (acc !== null) {
+      const track = document.createElement("div");
+      track.className = "bench-bar-track";
+      const fill = document.createElement("div");
+      fill.style.height = "100%";
+      fill.style.width = Math.max(acc * 100, 4) + "%";
+      fill.style.background = BASELINE_COLORS[name] || "#888";
+      track.appendChild(fill);
+      wrap.appendChild(track);
+    }
+    summary.appendChild(wrap);
+  });
+
+  const table = document.createElement("table");
+  table.className = "bench-table";
+  const headRow = document.createElement("tr");
+  ["Case", "Ground truth", ...baselineNames.map(n => BASELINE_LABELS[n] || n)].forEach(text => {
+    const th = document.createElement("th");
+    th.textContent = text;
+    headRow.appendChild(th);
+  });
+  table.appendChild(headRow);
+
+  data.cases.forEach(row => {
+    const tr = document.createElement("tr");
+    const caseCell = document.createElement("td");
+    caseCell.textContent = row.case_id;
+    const truthCell = document.createElement("td");
+    truthCell.textContent = row.ground_truth;
+    tr.append(caseCell, truthCell);
+
+    baselineNames.forEach(name => {
+      const p = row.picks[name];
+      const td = document.createElement("td");
+      if (p.skipped) {
+        td.textContent = "skipped";
+        td.style.color = "#666";
+      } else if (p.error) {
+        td.textContent = "error";
+        td.className = "bad";
+        td.title = p.error;
+      } else {
+        td.textContent = `${p.pick} (${p.latency_seconds}s)`;
+        td.className = p.correct ? "ok" : "bad";
+        td.title = p.reason || "";
+      }
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+  document.getElementById("bench-table").appendChild(table);
+}
+
+// seed the builder with one empty candidate on load
+addCandidateRow();
+</script>
+
+</body>
+</html>

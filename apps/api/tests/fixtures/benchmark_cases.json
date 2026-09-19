@@ -1,0 +1,172 @@
+[
+  {
+    "case_id": "case_1_time_and_provider_match",
+    "open_slot": {
+      "appointment_type": "follow-up",
+      "provider": "Dr. Lee",
+      "start_time": "2026-09-24T14:00:00",
+      "duration_minutes": 30
+    },
+    "candidates": [
+      {
+        "patient_id": "patient_A",
+        "soft_preferences": {"preferred_time_ranges": ["morning"], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": false,
+        "last_contacted_days_ago": 3,
+        "recent_declines": 0
+      },
+      {
+        "patient_id": "patient_B",
+        "soft_preferences": {"preferred_time_ranges": ["afternoon"], "preferred_provider": "Dr. Lee", "provider_flexible": false},
+        "earlier_if_possible": true,
+        "last_contacted_days_ago": 20,
+        "recent_declines": 0
+      },
+      {
+        "patient_id": "patient_C",
+        "soft_preferences": {"preferred_time_ranges": ["evening"], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": false,
+        "last_contacted_days_ago": 15,
+        "recent_declines": 0
+      }
+    ],
+    "ground_truth_best_id": "patient_B",
+    "notes": "Only patient_B matches both time-of-day preference and required provider."
+  },
+  {
+    "case_id": "case_2_avoid_over_contacted_patient",
+    "open_slot": {
+      "appointment_type": "check-up",
+      "provider": "Dr. Ahmed",
+      "start_time": "2026-09-25T09:00:00",
+      "duration_minutes": 20
+    },
+    "candidates": [
+      {
+        "patient_id": "patient_D",
+        "soft_preferences": {"preferred_time_ranges": ["morning"], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": true,
+        "last_contacted_days_ago": 0,
+        "recent_declines": 3
+      },
+      {
+        "patient_id": "patient_E",
+        "soft_preferences": {"preferred_time_ranges": ["morning"], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": true,
+        "last_contacted_days_ago": 25,
+        "recent_declines": 0
+      },
+      {
+        "patient_id": "patient_F",
+        "soft_preferences": {"preferred_time_ranges": ["afternoon"], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": false,
+        "last_contacted_days_ago": 10,
+        "recent_declines": 1
+      }
+    ],
+    "ground_truth_best_id": "patient_E",
+    "notes": "patient_D matches time but has 3 recent declines and was contacted today; patient_E matches equally well with a clean history."
+  },
+  {
+    "case_id": "case_3_earlier_if_possible_priority",
+    "open_slot": {
+      "appointment_type": "consultation",
+      "provider": "Dr. Kim",
+      "start_time": "2026-09-22T11:00:00",
+      "duration_minutes": 45
+    },
+    "candidates": [
+      {
+        "patient_id": "patient_G",
+        "soft_preferences": {"preferred_time_ranges": ["morning"], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": false,
+        "last_contacted_days_ago": 5,
+        "recent_declines": 0
+      },
+      {
+        "patient_id": "patient_H",
+        "soft_preferences": {"preferred_time_ranges": ["morning"], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": true,
+        "last_contacted_days_ago": 5,
+        "recent_declines": 0
+      },
+      {
+        "patient_id": "patient_I",
+        "soft_preferences": {"preferred_time_ranges": ["evening"], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": true,
+        "last_contacted_days_ago": 5,
+        "recent_declines": 0
+      }
+    ],
+    "ground_truth_best_id": "patient_H",
+    "notes": "This slot is earlier in the week than a typical booking; only patient_H both wants an earlier slot and matches time-of-day."
+  },
+  {
+    "case_id": "case_4_hard_provider_preference_conflict",
+    "open_slot": {
+      "appointment_type": "follow-up",
+      "provider": "Dr. Ahmed",
+      "start_time": "2026-09-26T15:00:00",
+      "duration_minutes": 30
+    },
+    "candidates": [
+      {
+        "patient_id": "patient_J",
+        "soft_preferences": {"preferred_time_ranges": ["afternoon"], "preferred_provider": "Dr. Lee", "provider_flexible": false},
+        "earlier_if_possible": true,
+        "last_contacted_days_ago": 8,
+        "recent_declines": 0
+      },
+      {
+        "patient_id": "patient_K",
+        "soft_preferences": {"preferred_time_ranges": ["afternoon"], "preferred_provider": "Dr. Ahmed", "provider_flexible": false},
+        "earlier_if_possible": true,
+        "last_contacted_days_ago": 8,
+        "recent_declines": 0
+      },
+      {
+        "patient_id": "patient_L",
+        "soft_preferences": {"preferred_time_ranges": ["morning"], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": false,
+        "last_contacted_days_ago": 8,
+        "recent_declines": 0
+      }
+    ],
+    "ground_truth_best_id": "patient_K",
+    "notes": "patient_J wants Dr. Lee specifically (not flexible) so this Dr. Ahmed slot is a poor fit despite matching time-of-day."
+  },
+  {
+    "case_id": "case_5_no_strong_signal_tiebreak_on_history",
+    "open_slot": {
+      "appointment_type": "cleaning",
+      "provider": "Dr. Kim",
+      "start_time": "2026-09-27T10:00:00",
+      "duration_minutes": 30
+    },
+    "candidates": [
+      {
+        "patient_id": "patient_M",
+        "soft_preferences": {"preferred_time_ranges": [], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": false,
+        "last_contacted_days_ago": 2,
+        "recent_declines": 1
+      },
+      {
+        "patient_id": "patient_N",
+        "soft_preferences": {"preferred_time_ranges": [], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": false,
+        "last_contacted_days_ago": 40,
+        "recent_declines": 0
+      },
+      {
+        "patient_id": "patient_O",
+        "soft_preferences": {"preferred_time_ranges": [], "preferred_provider": null, "provider_flexible": true},
+        "earlier_if_possible": false,
+        "last_contacted_days_ago": 18,
+        "recent_declines": 0
+      }
+    ],
+    "ground_truth_best_id": "patient_N",
+    "notes": "No preference signal either way; the tiebreaker should be longest since last contact and no recent declines."
+  }
+]
