@@ -236,3 +236,12 @@ Thumbs.db
 # --- Misc ---
 logs/
 ```
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+
+# SQLite
+*.db
+*.sqlite3
