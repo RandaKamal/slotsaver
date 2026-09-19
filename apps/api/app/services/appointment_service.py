@@ -1,0 +1,79 @@
+"""Deterministic availability lookup and booking. No AI/Nemotron involved:
+availability is exactly what's in the DB, and booking is a conditional
+update guarded by an atomic WHERE clause.
+"""
+
+import datetime
+from typing import Literal
+
+from fastapi import HTTPException
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from app.db.models.appointment import Appointment
+
+TimeOfDay = Literal["morning", "afternoon", "evening"]
+
+# [inclusive_hour, exclusive_hour)
+_TIME_OF_DAY_RANGES: dict[str, tuple[int, int]] = {
+    "morning": (8, 12),
+    "afternoon": (12, 17),
+    "evening": (17, 21),
+}
+
+
+def get_available_slots(
+    db: Session,
+    provider: str | None = None,
+    service: str | None = None,
+    date: datetime.date | None = None,
+    time_of_day: TimeOfDay | None = None,
+) -> list[Appointment]:
+    stmt = select(Appointment).where(Appointment.status == "available")
+
+    if provider:
+        stmt = stmt.where(Appointment.provider.ilike(f"%{provider}%"))
+    if service:
+        stmt = stmt.where(Appointment.service.ilike(f"%{service}%"))
+    if date:
+        day_start = datetime.datetime.combine(date, datetime.time.min)
+        day_end = datetime.datetime.combine(date, datetime.time.max)
+        stmt = stmt.where(Appointment.start_time.between(day_start, day_end))
+
+    stmt = stmt.order_by(Appointment.start_time)
+    results = list(db.execute(stmt).scalars().all())
+
+    if time_of_day:
+        lo, hi = _TIME_OF_DAY_RANGES[time_of_day]
+        results = [a for a in results if lo <= a.start_time.hour < hi]
+
+    return results
+
+
+def book_slot(db: Session, patient_id: str, slot_id: int) -> Appointment:
+    """Atomically flips a slot from available -> booked.
+
+    The WHERE clause (id AND status='available') is what makes this safe
+    under concurrent requests: only one UPDATE can ever match a given row,
+    so two simultaneous booking attempts on the same slot can't both win.
+    """
+
+    result = db.execute(
+        update(Appointment)
+        .where(Appointment.id == slot_id, Appointment.status == "available")
+        .values(status="booked", customer_id=patient_id)
+    )
+    db.commit()
+
+    if result.rowcount == 1:
+        booked = db.get(Appointment, slot_id)
+        assert booked is not None
+        return booked
+
+    existing = db.get(Appointment, slot_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"No such slot: {slot_id}")
+    raise HTTPException(
+        status_code=409,
+        detail=f"Slot {slot_id} is no longer available (status={existing.status})",
+    )
