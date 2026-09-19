@@ -245,3 +245,5 @@ out/
 # SQLite
 *.db
 *.sqlite3
+
+*.tsbuildinfo

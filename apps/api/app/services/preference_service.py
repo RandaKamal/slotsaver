@@ -17,8 +17,8 @@ EXTRACT_PATH = "/api/preferences/extract"
 
 
 def extract_preferences(patient_id: str, raw_text: str) -> dict:
-    """Calls Kevin's /api/preferences/extract with the documented contract
-    (transcript, customer_id) and returns its JSON response unmodified."""
+    """Calls Kevin's /api/preferences/extract with its actual contract
+    (transcript, patient_id) and returns its JSON response unmodified."""
 
     settings = get_settings()
     if not settings.backend_base_url:
@@ -31,7 +31,7 @@ def extract_preferences(patient_id: str, raw_text: str) -> dict:
     try:
         response = httpx.post(
             url,
-            json={"transcript": raw_text, "customer_id": patient_id},
+            json={"transcript": raw_text, "patient_id": patient_id},
             timeout=30.0,
         )
     except httpx.RequestError as exc:
@@ -62,8 +62,10 @@ def save_preference_record(
         raw_text=raw_text,
         hard_constraints=extracted.get("hard_constraints"),
         soft_preferences=extracted.get("soft_preferences"),
-        expiry=extracted.get("expiry"),
-        contact_preferences=extracted.get("contact_preferences"),
+        # The extractor emits "valid_until"/"contact_preference" (singular);
+        # keep this table's column names but read the real keys.
+        expiry=extracted.get("valid_until"),
+        contact_preferences=extracted.get("contact_preference"),
         raw_extraction=extracted,
     )
     db.add(record)

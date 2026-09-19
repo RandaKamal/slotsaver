@@ -27,8 +27,8 @@ class PreferenceRecord(Base):
 
     # Fields from Kevin's documented /api/preferences/extract contract,
     # pulled out for easy querying.
-    hard_constraints: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    soft_preferences: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    hard_constraints: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    soft_preferences: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     expiry: Mapped[str | None] = mapped_column(String, nullable=True)
     contact_preferences: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
 

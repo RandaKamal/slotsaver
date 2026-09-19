@@ -17,10 +17,11 @@ class PreferenceRecordResponse(BaseModel):
     id: int
     patient_id: str
     raw_text: str
-    hard_constraints: list[Any] | None = None
-    soft_preferences: list[Any] | None = None
+    # The extractor returns these as objects, not lists; accept either.
+    hard_constraints: dict[str, Any] | list[Any] | None = None
+    soft_preferences: dict[str, Any] | list[Any] | None = None
     expiry: str | None = None
-    contact_preferences: dict[str, Any] | list[Any] | None = None
+    contact_preferences: dict[str, Any] | list[Any] | str | None = None
     raw_extraction: dict[str, Any]
     created_at: datetime
 
