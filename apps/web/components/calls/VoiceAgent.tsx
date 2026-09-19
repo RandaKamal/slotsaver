@@ -77,6 +77,74 @@ function TalkPanel() {
           return "I had trouble saving that just now.";
         }
       },
+
+      // Called by the ElevenLabs agent's "get_available_slots" tool.
+      // Returns real DB rows as JSON text for the agent to read from —
+      // it must not describe any slot that isn't in this result.
+      get_available_slots: async (parameters: {
+        provider?: string;
+        service?: string;
+        date?: string;
+        time_of_day?: string;
+      }) => {
+        const query = new URLSearchParams();
+        if (parameters.provider) query.set("provider", parameters.provider);
+        if (parameters.service) query.set("service", parameters.service);
+        if (parameters.date) query.set("date", parameters.date);
+        if (parameters.time_of_day) query.set("time_of_day", parameters.time_of_day);
+
+        try {
+          const res = await fetch(
+            `${API_URL}/api/voice/available-slots?${query.toString()}`
+          );
+          if (!res.ok) {
+            console.error("get_available_slots failed", res.status, await res.text());
+            return "I couldn't check availability just now.";
+          }
+          const slots = await res.json();
+          if (Array.isArray(slots) && slots.length === 0) {
+            return "No matching slots are available.";
+          }
+          return JSON.stringify(slots);
+        } catch (err) {
+          console.error("get_available_slots error", err);
+          return "I couldn't check availability just now.";
+        }
+      },
+
+      // Called by the ElevenLabs agent's "book_appointment" tool.
+      // patient_id must come from the {{patient_id}} dynamic variable set
+      // at session start below, not from anything the LLM makes up.
+      book_appointment: async (parameters: {
+        patient_id?: string;
+        slot_id?: number | string;
+      }) => {
+        try {
+          const res = await fetch(`${API_URL}/api/voice/book`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              patient_id: parameters.patient_id,
+              slot_id: Number(parameters.slot_id),
+            }),
+          });
+          if (res.status === 409) {
+            return "Sorry, that slot was just taken. Would you like another option?";
+          }
+          if (res.status === 404) {
+            return "I couldn't find that slot.";
+          }
+          if (!res.ok) {
+            console.error("book_appointment failed", res.status, await res.text());
+            return "I couldn't complete that booking just now.";
+          }
+          const booked = await res.json();
+          return `Booked: ${booked.service} with ${booked.provider} at ${booked.start_time}.`;
+        } catch (err) {
+          console.error("book_appointment error", err);
+          return "I couldn't complete that booking just now.";
+        }
+      },
     },
   });
 
