@@ -77,3 +77,34 @@ def book_slot(db: Session, patient_id: str, slot_id: int) -> Appointment:
         status_code=409,
         detail=f"Slot {slot_id} is no longer available (status={existing.status})",
     )
+
+
+def cancel_appointment(db: Session, appointment_id: int) -> Appointment:
+    """Atomically flips a slot from booked -> available, clearing who held it.
+
+    Same WHERE-guarded pattern as book_slot: only an appointment currently
+    'booked' can be cancelled, so cancelling an already-open or
+    already-cancelled slot is rejected rather than silently accepted. The
+    freed row is immediately what get_available_slots/book_slot see - this
+    IS "making that time available for recovery," not a separate step.
+    """
+
+    result = db.execute(
+        update(Appointment)
+        .where(Appointment.id == appointment_id, Appointment.status == "booked")
+        .values(status="available", customer_id=None)
+    )
+    db.commit()
+
+    if result.rowcount == 1:
+        cancelled = db.get(Appointment, appointment_id)
+        assert cancelled is not None
+        return cancelled
+
+    existing = db.get(Appointment, appointment_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"No such appointment: {appointment_id}")
+    raise HTTPException(
+        status_code=409,
+        detail=f"Appointment {appointment_id} is not booked (status={existing.status})",
+    )

@@ -7,7 +7,9 @@ from app.agents.nemotron.incentive import decide_incentive
 from app.agents.nemotron.ranker import rank_candidates
 from app.db.models.appointment import Appointment
 from app.db.session import get_db
+from app.services.appointment_service import cancel_appointment
 from app.services.recovery_matcher import find_candidates
+from app.services.recovery_service import get_recovery_plan_from_db, save_recovery_plan
 
 router = APIRouter(prefix="/api/recovery", tags=["recovery"])
 
@@ -44,8 +46,14 @@ def create_recovery_plan(payload: PlanRequest) -> dict:
 
 
 @router.get("/{plan_id}")
-def get_recovery_plan(plan_id: str) -> dict:
+def get_recovery_plan(plan_id: str, db: Session = Depends(get_db)) -> dict:
     plan = RECOVERY_PLANS.get(plan_id)
+    if plan:
+        return plan
+    # Falls back to the DB so a plan survives past this process's lifetime -
+    # /plan (the manual-testing endpoint above) only ever writes in-memory,
+    # so this fallback only ever has something for from-cancellation plans.
+    plan = get_recovery_plan_from_db(db, plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan not found")
     return plan
@@ -99,19 +107,20 @@ def recover_from_cancellation(
 ) -> dict:
     """The whole product in one call: a booked slot frees up, and we find who wants it.
 
-    Frees the slot, selects patients whose STORED INTENT fits it (deterministic,
-    see recovery_matcher), then has Nemotron rank the survivors. Without stored
-    intent this slot simply goes empty - nobody knows who to call.
+    Cancels the booking (deterministic - see appointment_service.cancel_appointment;
+    rejects a slot that isn't actually booked), selects patients whose STORED
+    INTENT fits it (deterministic, see recovery_matcher), then has Nemotron rank
+    the survivors. Without stored intent this slot simply goes empty - nobody
+    knows who to call. If Nemotron itself is unreachable (e.g. no NVIDIA_API_KEY),
+    everything up to that point already happened and is persisted - only the
+    ranking step is marked failed, never faked.
     """
-    slot = db.get(Appointment, payload.slot_id)
-    if slot is None:
+    existing = db.get(Appointment, payload.slot_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail=f"No such slot: {payload.slot_id}")
+    previous_holder = existing.customer_id
 
-    previous_holder = slot.customer_id
-    slot.status = "available"
-    slot.customer_id = None
-    db.commit()
-    db.refresh(slot)
+    slot = cancel_appointment(db, payload.slot_id)
 
     eligible, excluded = find_candidates(db, slot.start_time, slot.provider)
 
@@ -135,8 +144,29 @@ def recover_from_cancellation(
             "message": "No stored intent matches this slot - it would go unfilled.",
         }
 
-    ranking = rank_candidates(open_slot, eligible)
     plan_id = new_plan_id()
+    try:
+        ranking = rank_candidates(open_slot, eligible)
+    except Exception as exc:
+        # The deterministic work above (cancellation, eligibility) already
+        # happened and is real; only ranking failed. Persist that plainly
+        # instead of a raw 500 or - worse - inventing a ranking.
+        plan = {
+            "plan_id": plan_id,
+            "open_slot": open_slot,
+            "candidates": eligible,  # unranked - honestly labelled via status below
+            "ranked_candidate_ids": [],
+            "current_candidate_index": 0,
+            "stage": "NORMAL",
+            "selected_incentive": None,
+            "status": "ranking_failed",
+            "revenue_at_risk": slot.price,
+            "message": f"Eligibility found {len(eligible)} candidate(s), but ranking failed: {exc}",
+        }
+        save_recovery_plan(db, plan, slot_id=slot.id, cancelled_by=previous_holder)
+        RECOVERY_PLANS[plan_id] = plan
+        return {**plan, "cancelled_by": previous_holder, "eligible": eligible, "excluded": excluded}
+
     plan = {
         "plan_id": plan_id,
         "open_slot": open_slot,
@@ -146,8 +176,10 @@ def recover_from_cancellation(
         "stage": "NORMAL",
         "selected_incentive": None,
         "status": "pending",
+        "revenue_at_risk": slot.price,
     }
     RECOVERY_PLANS[plan_id] = plan
+    save_recovery_plan(db, plan, slot_id=slot.id, cancelled_by=previous_holder)
 
     return {
         **plan,

@@ -1,4 +1,4 @@
-"""Read endpoints backing the clinic dashboard and calendar."""
+"""Read endpoints backing the clinic dashboard and calendar, plus cancellation."""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -8,6 +8,7 @@ from app.db.models.appointment import Appointment
 from app.db.models.preference import PreferenceRecord
 from app.db.session import get_db
 from app.schemas.appointment import AppointmentSlot
+from app.services.appointment_service import cancel_appointment
 
 router = APIRouter(prefix="/api/appointments", tags=["appointments"])
 
@@ -21,6 +22,18 @@ def list_appointments(
     if status:
         stmt = stmt.where(Appointment.status == status)
     return [AppointmentSlot.model_validate(a) for a in db.execute(stmt).scalars()]
+
+
+@router.post("/{appointment_id}/cancel", response_model=AppointmentSlot)
+def cancel(appointment_id: int, db: Session = Depends(get_db)) -> AppointmentSlot:
+    """Cancels a booked appointment, freeing that time for recovery.
+
+    Deterministic only - no ranking here. To also find and rank patients for
+    the freed slot in one call, use POST /api/recovery/from-cancellation,
+    which calls this same service function internally.
+    """
+    appointment = cancel_appointment(db, appointment_id)
+    return AppointmentSlot.model_validate(appointment)
 
 
 @router.get("/metrics")
