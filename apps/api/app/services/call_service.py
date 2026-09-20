@@ -64,8 +64,15 @@ def _dynamic_variables(attempt, slot: dict | None, patient_brief: str | None = N
         else "- They asked to be told if this slot opened up.",
         "call_tone": f"- Keep the call {brief.get('tone', 'warm')} in tone.",
         "patient_history": patient_brief or "No previous conversations on file for this patient.",
+        # "if they hesitate" meant an authorised incentive was almost never
+        # actually spoken: the agent held it back waiting for pushback that a
+        # short call never produces, so a discount the business had already
+        # approved went unmentioned. When one is authorised it is part of the
+        # offer, so say it up front.
         "incentive_line": (
-            f"You may offer this incentive if they hesitate: {pitch}"
+            f"IMPORTANT - an incentive is approved for this call and you must mention it "
+            f"proactively, in your first or second sentence, without waiting for them to "
+            f"hesitate or object: {pitch}"
             if pitch
             else "No incentive is authorised on this call. Do not offer a discount."
         ),
@@ -105,6 +112,17 @@ def place_call(attempt, slot: dict | None = None, patient_brief: str | None = No
         )
 
     brief = attempt.call_brief or {}
+
+    # An approved incentive goes into the FIRST MESSAGE, not just the prompt.
+    # Prompt instructions are advice the agent can interpret away - it did
+    # exactly that, holding the discount back for an objection that never
+    # came. The opening line is spoken verbatim, so putting it here is the
+    # only way to guarantee an authorised discount is actually said out loud.
+    opening_line = brief.get("opening_line") or ""
+    incentive_pitch = brief.get("incentive_pitch")
+    if incentive_pitch and incentive_pitch.strip().lower() not in opening_line.lower():
+        opening_line = f"{opening_line.rstrip()} {incentive_pitch.strip()}".strip()
+
     payload = {
         "agent_id": agent_id,
         "agent_phone_number_id": phone_number_id,
@@ -114,7 +132,7 @@ def place_call(attempt, slot: dict | None = None, patient_brief: str | None = No
             "conversation_config_override": {
                 # No tool override: the phone agent already carries exactly the
                 # webhook tools a call needs.
-                "agent": {"first_message": brief.get("opening_line")}
+                "agent": {"first_message": opening_line}
             },
         },
     }
