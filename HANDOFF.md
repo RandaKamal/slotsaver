@@ -80,9 +80,11 @@ Status of the four landmines this section used to list:
    the biggest trap — `python scripts/update_call_tool_urls.py https://<prod>`
    is step 4 of `DEPLOY.md`. The script now refuses a non-HTTPS URL.
 2. **SQLite is gone in production.** App Platform has no persistent disks, so
-   it was never survivable there; the spec provisions managed Postgres and
-   `app/db/migrate.py` now renders DDL per dialect. SQLite is still the local
-   default.
+   it was never survivable there. The database is TigerData (PostgreSQL, via
+   the MLH perk at mlh.link/tigerdata — $1,000 of credit, **expiring 30 days
+   after signup**), set as a `DATABASE_URL` secret rather than provisioned by
+   the spec. `app/db/migrate.py` now renders DDL per dialect. SQLite is still
+   the local default.
 3. **CORS is no longer hardcoded.** Dev origins are built in, extras come from
    `CORS_ALLOW_ORIGINS`. In production it is moot — same origin.
 4. **`NEXT_PUBLIC_API_URL` no longer needs to be baked in.** Unset, the client

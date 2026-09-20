@@ -33,6 +33,19 @@ def _resolve_database_url(raw: str) -> str:
 
 DATABASE_URL = _resolve_database_url(os.getenv("DATABASE_URL", "sqlite:///./relay.db"))
 
+# A sqlite URL on App Platform is not a degraded mode - there is no persistent
+# disk there, so it is a database that silently vanishes on the next deploy,
+# taking the demo data with it and giving no sign until someone notices the
+# dashboard is empty. REQUIRE_POSTGRES (set in .do/app.yaml) turns a missing or
+# misspelled DATABASE_URL into a loud failure at boot instead.
+if os.getenv("REQUIRE_POSTGRES", "").strip().lower() in {"1", "true", "yes"}:
+    if DATABASE_URL.startswith("sqlite"):
+        raise RuntimeError(
+            "REQUIRE_POSTGRES is set but DATABASE_URL is sqlite "
+            f"({DATABASE_URL!r}). Set DATABASE_URL to the Postgres connection "
+            "string - on App Platform a sqlite file does not survive a deploy."
+        )
+
 _is_sqlite = DATABASE_URL.startswith("sqlite")
 _connect_args = {"check_same_thread": False} if _is_sqlite else {}
 

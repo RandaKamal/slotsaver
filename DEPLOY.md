@@ -17,7 +17,9 @@ API calls same-origin, which means **CORS stops mattering** and
 problems the handoff flagged as landmines. It also gives the ElevenLabs webhook
 tools one stable HTTPS base URL.
 
-Running cost: ~$22/month (api 1GB $10 + web 0.5GB $5 + dev Postgres $7).
+Running cost: **~$15/month** (api 1GB $10 + web 0.5GB $5). The database is
+free on the MLH TigerData perk — see step 1. Billing is hourly, so a demo that
+runs for a few days costs a couple of dollars; destroy the app afterwards.
 
 ---
 
@@ -37,27 +39,54 @@ she may have to click it.
 
 ---
 
-## 1. Create the app
+## 1. Create the database (TigerData)
+
+The database is **not** provisioned by App Platform. App Platform has no
+persistent disks — SQLite there is wiped on every deploy — so it needs a
+managed Postgres, and the MLH perk gives us one free.
+
+1. Sign up at <https://mlh.link/tigerdata> (redirects to the MLH partner page).
+   **$1,000 in credits, valid 30 days.** That is far more than this needs.
+2. Create a PostgreSQL service. **Pick a US East region** — the app runs in DO's
+   `nyc`, and a database on the other coast adds a round trip to every query,
+   which you will feel on the dashboard.
+3. Copy the connection string. It looks like:
+   ```
+   postgres://tsdbadmin:<pw>@<host>.tsdb.cloud.timescale.com:<port>/tsdb?sslmode=require
+   ```
+
+TigerData is plain PostgreSQL (it's Timescale's rebrand), so nothing in the app
+changes — the `postgres://` scheme it hands out is normalised to `postgresql://`
+in `app/db/session.py`, since SQLAlchemy 2.x rejects the short form.
+
+> ⏳ **The credit expires 30 days after signup.** After that the service is
+> billable or suspended. Fine for the hackathon; if SlotSaver outlives it,
+> either top up or uncomment the `databases:` block in `.do/app.yaml` to move to
+> DO's own $7/mo Postgres. Moving is a `pg_dump` and a changed env var.
+
+## 2. Create the app
 
 ```bash
 doctl apps create --spec .do/app.yaml
 doctl apps list                        # note the app id and the live URL
 ```
 
-This provisions the managed Postgres too. First build takes ~5–10 min.
+First build takes ~5–10 min. The app will come up **unhealthy** until you do
+step 3 — it has no `DATABASE_URL` yet and the API exits on boot. That is
+expected, not a broken build.
 
-## 2. Put the real secrets in
+## 3. Put the real secrets in
 
 `.do/app.yaml` ships `CHANGE_ME` placeholders — real keys are never committed.
 Set them in the control panel: **Apps → slotsaver → api → Settings →
 Environment Variables**, encrypted:
 
-`NVIDIA_API_KEY`, `ELEVENLABS_API_KEY`, `TWILIO_ACCOUNT_SID`,
+`DATABASE_URL` (the TigerData string from step 1 — the app will not boot
+without it), `NVIDIA_API_KEY`, `ELEVENLABS_API_KEY`, `TWILIO_ACCOUNT_SID`,
 `TWILIO_AUTH_TOKEN`, and (benchmark only) `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`.
 
-The non-secret ids — agent ids, phone number id, `DATABASE_URL`,
-`BACKEND_BASE_URL`, `CORS_ALLOW_ORIGINS` — are already in the spec and need no
-action.
+The non-secret ids — agent ids, phone number id, `BACKEND_BASE_URL`,
+`CORS_ALLOW_ORIGINS` — are already in the spec and need no action.
 
 > ⚠️ **After this step, never re-apply `.do/app.yaml` blind.** It would
 > overwrite every real key with `CHANGE_ME`. To change the spec later, pull the
@@ -68,20 +97,20 @@ action.
 > doctl apps update <app-id> --spec .do/live.yaml
 > ```
 
-## 3. Seed the demo data
+## 4. Seed the demo data
 
 The schema builds itself on boot (`create_all` + `ensure_columns` in
 `app/main.py`), but the database starts empty. Seed it from your laptop —
 `DATABASE_URL` as a real env var overrides the `.env` value:
 
 ```bash
-# Connection string: DO control panel -> Databases -> db -> Connection details
-DATABASE_URL='postgresql://...?sslmode=require' python scripts/seed_demo_data.py
+# Same TigerData connection string from step 1.
+DATABASE_URL='postgres://tsdbadmin:...?sslmode=require' python scripts/seed_demo_data.py
 ```
 
 Re-run this before any demo; it clears and re-seeds every time.
 
-## 4. Repoint the ElevenLabs webhook tools  ← do not skip
+## 5. Repoint the ElevenLabs webhook tools  ← do not skip
 
 The five `*_call` webhook tools currently point at a `trycloudflare.com` tunnel
 on Kevin's laptop. Until you repoint them the agent will talk normally and then
@@ -96,7 +125,7 @@ Pointing them at production breaks local call testing, and pointing them back at
 a tunnel takes production down. Whoever runs it last wins — say so in the team
 chat.
 
-## 5. Verify
+## 6. Verify
 
 ```bash
 APP=https://<app>.ondigitalocean.app
@@ -135,8 +164,9 @@ Rollback: **Apps → slotsaver → Activity →** pick the last good deployment 
 - **The ElevenLabs API key has been exposed in chat transcripts.** Rotating it
   is overdue. Deploying puts it on a server, which is a reasonable moment to do
   it: rotate in the ElevenLabs dashboard, update the env var in step 2, redeploy.
-- **The dev Postgres is not backed up.** Fine for demo data you can reseed in
-  one command; not fine for anything you care about.
+- **The TigerData credit runs out 30 days after signup**, and nothing is backed
+  up. Fine for demo data you can reseed in one command; not fine for anything
+  you care about.
 - **A deploy does not reseed.** The data survives deploys now (that was the
   point), but if you wipe it you are back to step 3.
 

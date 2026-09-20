@@ -54,14 +54,25 @@ ingress:
       component:
         name: web
 
-databases:
-  # App Platform has no persistent disks, so SQLite cannot survive a deploy or
-  # a platform-initiated restart. This is the managed Postgres that replaces it.
-  # production: false = the ~$7/mo dev database. Upgradeable in place.
-  - name: db
-    engine: PG
-    version: "16"
-    production: false
+# NO `databases:` BLOCK ON PURPOSE.
+#
+# App Platform has no persistent disks, so SQLite cannot survive a deploy or a
+# platform restart - a managed Postgres is mandatory. We use TigerData
+# (PostgreSQL; Timescale's rebrand) via the MLH perk at mlh.link/tigerdata
+# rather than DO's own $7/mo dev database, because the perk is $1,000 of
+# credit. Note the credit is valid for 30 DAYS - see DEPLOY.md before relying
+# on this past the hackathon.
+#
+# DATABASE_URL below is the TigerData connection string, set as a secret.
+#
+# To switch back to DO managed Postgres instead, uncomment this and set
+# DATABASE_URL to ${db.DATABASE_URL}:
+#
+# databases:
+#   - name: db
+#     engine: PG
+#     version: "16"
+#     production: false
 
 services:
   - name: api
@@ -81,11 +92,20 @@ services:
       http_path: /health
       initial_delay_seconds: 20
     envs:
-      # ${db.DATABASE_URL} is substituted by the platform with the managed
-      # Postgres connection string, sslmode included.
+      # TigerData connection string, e.g.
+      #   postgres://tsdbadmin:<pw>@<host>.tsdb.cloud.timescale.com:<port>/tsdb?sslmode=require
+      # A secret, because it contains the password. The `postgres://` scheme
+      # TigerData hands out is normalised in app/db/session.py - SQLAlchemy 2.x
+      # only accepts `postgresql://`.
       - key: DATABASE_URL
         scope: RUN_TIME
-        value: ${db.DATABASE_URL}
+        type: SECRET
+        value: CHANGE_ME
+      # Fail loudly at boot if DATABASE_URL is missing, rather than falling
+      # back to a sqlite file that App Platform wipes on the next deploy.
+      - key: REQUIRE_POSTGRES
+        scope: RUN_TIME
+        value: "true"
       - key: BACKEND_BASE_URL
         scope: RUN_TIME
         value: ${APP_URL}
