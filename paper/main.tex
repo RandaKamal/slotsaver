@@ -178,7 +178,16 @@ derivations, averaging thousands of output tokens per item, which is precisely
 what makes it vulnerable to the ceiling effect. Practitioners relying on that
 toggle to bound output length should verify it empirically rather than trust it.
 
-Sampling temperature is zero wherever the vendor SDK exposes it. Latency is measured around the successful request only, excluding our own
+Sampling temperature is zero wherever the vendor SDK exposes it.
+
+Calls that never reached the model are excluded from every solve rate and
+reported separately as an error count. Under load the NVIDIA endpoint returns
+HTTP 429 and 503 at a substantial rate, and we retry with exponential backoff,
+but a call that exhausts its retries produced no generation to score. Placing it
+in the denominator would record an infrastructure failure as a planning failure,
+which is the same conflation this paper is about. We note that our own first
+analysis did exactly that before we caught it, which we take as evidence that
+the mistake is easy rather than unusual. Latency is measured around the successful request only, excluding our own
 retry backoff, so that rate limiting imposed by our billing tier is not charged
 to a model's speed. Items are sampled stratified by participant count, because
 the raw distribution is half two participant items and a uniform sample would

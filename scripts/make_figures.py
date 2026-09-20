@@ -83,12 +83,24 @@ def load(pattern="results/naturalplan_*.json", include_checkpoint=True):
     return unique
 
 
+def attempted(rows):
+    """Calls that actually reached the model.
+
+    A 429 or a 503 from the provider is an infrastructure failure, not a wrong
+    answer. Counting it in the denominator of a solve rate is exactly the
+    conflation this paper is about, so it is excluded here and reported
+    separately as an error count.
+    """
+    return [r for r in rows if not r.get("error")]
+
+
 def rate(rows):
-    if not rows:
+    valid = attempted(rows)
+    if not valid:
         return 0.0, 0.0, 0.0, 0
-    ok = sum(r["solved"] for r in rows)
-    lo, hi = wilson_interval(ok, len(rows))
-    return ok / len(rows), lo, hi, len(rows)
+    ok = sum(r["solved"] for r in valid)
+    lo, hi = wilson_interval(ok, len(valid))
+    return ok / len(valid), lo, hi, len(valid)
 
 
 def sel(recs, model=None, budget=None, people=None):
@@ -132,9 +144,10 @@ def truncation_rate(rows, budget):
     """Fraction of generations that ended at the ceiling rather than at a stop
     token. Uses the emitted token count as a proxy, since not every vendor SDK
     surfaces a finish reason consistently."""
-    if not rows:
+    valid = attempted(rows)
+    if not valid:
         return 0.0
-    return sum(1 for r in rows if truncated(r, budget)) / len(rows)
+    return sum(1 for r in valid if truncated(r, budget)) / len(valid)
 
 
 def conditional_rate(rows, budget):
@@ -146,7 +159,7 @@ def conditional_rate(rows, budget):
     the unconditional rate, since a model that needs more room is genuinely more
     expensive to deploy.
     """
-    finished = [r for r in rows if not truncated(r, budget) and not r["error"]]
+    finished = [r for r in attempted(rows) if not truncated(r, budget)]
     return rate(finished)
 
 

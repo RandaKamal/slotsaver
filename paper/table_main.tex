@@ -7,7 +7,7 @@ Model & Solve \% & 95\% CI & Trunc \% & Cond \% & $n$ & Lat.(s) & Out tok \\
 \midrule
 Nemotron Super & 83.3 & 43.6--97.0 & 16.7 & 100.0 & 6 & 22.7 & 2502 \\
 Claude Haiku 4.5 & 83.3 & 43.6--97.0 & 0.0 & 83.3 & 6 & 3.8 & 568 \\
-Gemini 3.5 Flash & 83.3 & 43.6--97.0 & 0.0 & 100.0 & 6 & 15.4 & 21 \\
+Gemini 3.5 Flash & 100.0 & 56.6--100.0 & 0.0 & 100.0 & 5 & 15.4 & 21 \\
 \bottomrule
 \end{tabular}
 \caption{Results at a ceiling of 4096 tokens. Solve \% is the headline number an evaluation would normally report. Trunc \% is the fraction of generations that ended at the ceiling rather than at a stop token; Cond \% is the solve rate over only those generations that were allowed to finish. Where Trunc \% is above zero, Solve \% understates the model. Intervals are 95\% Wilson. Latency is the median of successful calls, timed around the request only.}
