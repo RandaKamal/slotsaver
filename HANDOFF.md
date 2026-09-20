@@ -67,45 +67,64 @@ Webhook tool IDs are listed in `scripts/update_call_tool_urls.py`.
 
 ## Deployment notes
 
-**The deploy is prepared but not yet executed.** Everything in the repo is
-ready; someone still has to run it against a DigitalOcean account. The runbook
-is `DEPLOY.md` — follow that, not this section.
+**Prepared, not yet executed.** The repo is ready; someone still has to click
+through three signups. Runbook is `DEPLOY.md` — follow that, not this section.
 
-Shape: App Platform, one app, two components behind one hostname
-(`/` -> web, `/api` -> api), managed Postgres, spec in `.do/app.yaml`.
+Shape (all free, no credit card):
+
+| Piece | Where | Config |
+|---|---|---|
+| Frontend | Vercel Hobby | root dir `apps/web`, env set in dashboard |
+| API | Render free web service | `render.yaml` |
+| Database | TigerData (MLH perk) | `DATABASE_URL` secret |
+
+**DigitalOcean was ruled out on cost**, not on merit: a DO account cannot
+create anything until a card is added, and the signup credit is $5 scoped to
+Inference Cloud. `.do/app.yaml` is kept as a working paid alternative (~$10/mo)
+and is architecturally nicer — one app, one origin, so no CORS and no
+build-time API URL.
+
+**The API cannot be serverless.** `voice.py` hands ~12s of extraction and
+~20-30s of recovery to `BackgroundTasks` that run after the response is sent.
+Vercel Functions / scale-to-zero platforms freeze the instance at response
+time and drop that work silently — taking both the 0.027s latency win and the
+entire autonomous recovery loop with it. Render runs a real container.
 
 Status of the four landmines this section used to list:
 
 1. **Webhook tools still point at the cloudflare tunnel.** Unchanged and still
-   the biggest trap — `python scripts/update_call_tool_urls.py https://<prod>`
-   is step 4 of `DEPLOY.md`. The script now refuses a non-HTTPS URL.
-2. **SQLite is gone in production.** App Platform has no persistent disks, so
-   it was never survivable there. The database is TigerData (PostgreSQL, via
-   the MLH perk at mlh.link/tigerdata — $1,000 of credit, **expiring 30 days
-   after signup**), set as a `DATABASE_URL` secret rather than provisioned by
-   the spec. `app/db/migrate.py` now renders DDL per dialect. SQLite is still
-   the local default.
-3. **CORS is no longer hardcoded.** Dev origins are built in, extras come from
-   `CORS_ALLOW_ORIGINS`. In production it is moot — same origin.
-4. **`NEXT_PUBLIC_API_URL` no longer needs to be baked in.** Unset, the client
-   uses same-origin relative paths (`apps/web/lib/constants.ts`). Only set it
-   if web and api are ever split into separate apps.
+   the biggest trap — step 5 of `DEPLOY.md`. Point them at the *Render* URL.
+   The script now refuses a non-HTTPS URL.
+2. **SQLite is gone in production.** Render's filesystem is ephemeral, so it
+   was never survivable there. Database is TigerData (PostgreSQL, free via
+   mlh.link/tigerdata, **credit expires 30 days after signup**).
+   `app/db/migrate.py` renders DDL per dialect; `REQUIRE_POSTGRES` makes a
+   missing `DATABASE_URL` a loud crash rather than a silent SQLite fallback.
+   SQLite is still the local default.
+3. **CORS is no longer hardcoded** — `CORS_ALLOW_ORIGINS` env var. It *does*
+   matter again, because Vercel and Render are different origins.
+4. **`NEXT_PUBLIC_API_URL`** is still baked in at build time (unavoidable), but
+   forgetting it now **fails the Vercel production build** with an explanatory
+   message instead of shipping a dashboard that fetches itself.
 
-Still true and still worth reading:
+Still true:
 
-5. **Secrets.** `.env` is gitignored. `.do/app.yaml` carries `CHANGE_ME`
-   placeholders, so re-applying it blind wipes the real keys — pull the live
-   spec first (`doctl apps spec get`). The ElevenLabs key has been exposed in
-   chat transcripts more than once; rotating it is overdue, and Kevin has
-   repeatedly deprioritised it — raise it once, respect the answer.
+5. **Secrets.** `.env` is gitignored. Neither `render.yaml` nor `.do/app.yaml`
+   contains a real key — Render prompts for `sync: false` values. The
+   ElevenLabs key has been exposed in chat transcripts more than once;
+   rotating it is overdue, and Kevin has repeatedly deprioritised it — raise it
+   once, respect the answer.
 6. **Twilio is still a TRIAL account.** Every outbound call plays "press any key
    to continue" first, and only numbers verified in the Twilio console can be
    called. This cannot be disabled via API. Upgrading (a small top-up) removes
    both limits and is required before demoing to anyone else's phone.
+7. **Render free spins down after 15 min idle, ~1 min cold start.** Set up a
+   keep-warm pinger before demo day (step 6 of `DEPLOY.md`). This is the most
+   likely thing to break a live demo.
 
-Not verified: nothing has been run against a real Postgres server. The schema
-was compiled offline against the PostgreSQL dialect and the models are all
-portable ORM types, but first contact with the managed database is still ahead.
+Not verified: nothing has run against a real Postgres server, and nothing has
+been deployed. Measured locally: the API is 95MB RSS fully imported, so the
+512MB free tiers have ample headroom.
 
 ---
 

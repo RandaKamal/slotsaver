@@ -1,0 +1,60 @@
+# Render Blueprint for the SlotSaver API (free tier).
+#
+# The frontend does NOT live here - it goes to Vercel. This file only
+# describes the FastAPI service, because the API is the part that cannot be
+# serverless: voice.py hands ~12s of extraction and ~20-30s of recovery work
+# to BackgroundTasks that run AFTER the response is sent. A serverless
+# platform freezes the instance at response time and that work is silently
+# lost, which takes the whole autonomous recovery loop with it. Render runs a
+# real container, so it survives.
+#
+#   Render dashboard -> New -> Blueprint -> pick this repo
+#
+# Secrets are marked `sync: false`: Render prompts for them on first deploy
+# and stores them itself, so nothing lands in git. See DEPLOY.md.
+
+services:
+  - type: web
+    name: slotsaver-api
+    runtime: docker
+    plan: free
+    # Ohio is Render's us-east. Keep the TigerData database in a US East
+    # region too - a cross-country round trip shows up on every query.
+    region: ohio
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Render injects PORT itself; the Dockerfile already honours it.
+      - key: REQUIRE_POSTGRES
+        value: "true"
+      - key: ELEVENLABS_AGENT_ID
+        value: agent_2801m2xmgxn0ezhvwewp08yzrphz
+      - key: ELEVENLABS_PHONE_AGENT_ID
+        value: agent_0101m2yctba3fgcadx5daphpfv2c
+      - key: ELEVENLABS_PHONE_NUMBER_ID
+        value: phnum_5001m2ybj5q6f62r60s66r7a1kbz
+      - key: TWILIO_PHONE_NUMBER
+        value: "+15722348213"
+      # Prompted on first deploy, never stored in git.
+      - key: DATABASE_URL          # TigerData connection string
+        sync: false
+      - key: CORS_ALLOW_ORIGINS    # the Vercel URL - required, origins differ now
+        sync: false
+      - key: BACKEND_BASE_URL      # this service's own Render URL
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      # Benchmark-only baselines - omit if you would rather not put these on
+      # the server at all.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false

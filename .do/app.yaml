@@ -84,10 +84,10 @@ services:
     dockerfile_path: apps/api/Dockerfile
     http_port: 8080
     instance_count: 1
-    # 0.5GB is the cheaper slug, but this process imports the openai, anthropic,
-    # google-genai and elevenlabs SDKs at startup and sits close to that ceiling.
-    # 1GB is the difference between a demo and an OOM restart mid-call.
-    instance_size_slug: apps-s-1vcpu-1gb
+    # Measured: the app is 95MB RSS with every route and SDK imported, so the
+    # 0.5GB slug has ample headroom. (An earlier version of this file used 1GB
+    # on the assumption the AI SDKs were heavy at import. They are not.)
+    instance_size_slug: apps-s-1vcpu-0.5gb
     health_check:
       http_path: /health
       initial_delay_seconds: 20
