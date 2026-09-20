@@ -111,7 +111,13 @@ def approve(attempt_id: int, payload: DecisionRequest, db: Session = Depends(get
     except Exception as exc:
         logger.exception("call placement failed for attempt %s", attempt_id)
         attempt.status = "failed"
-        call_error = str(exc)
+        # Full exception (which can embed the ElevenLabs/Twilio request URL
+        # or response body) goes to the server log only. This is an
+        # unauthenticated public endpoint, so the client only gets the
+        # exception's type - enough to tell "config problem" from
+        # "telephony provider rejected the call" without leaking anything
+        # from a third-party error body.
+        call_error = f"call_placement_failed: {type(exc).__name__}"
     db.commit()
     db.refresh(attempt)
     result = _serialize(attempt)
