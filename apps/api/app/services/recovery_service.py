@@ -184,7 +184,7 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
                         next_candidate.get("match_score", 0.0),
                         record.revenue_at_risk or 0.0,
                     )
-                    maybe_auto_call(db, outreach)
+                    maybe_auto_call(db, outreach, candidate=next_candidate)
                 except Exception:
                     # The offer advance itself already succeeded and is
                     # committed above - only the next candidate's outreach/
@@ -322,7 +322,7 @@ def apply_incentive_decision(db: Session, plan_id: str, business_policy: dict) -
                     incentive_override=decision,
                     business_policy=business_policy,
                 )
-                maybe_auto_call(db, outreach)
+                maybe_auto_call(db, outreach, candidate=reoffer_candidate)
             except Exception:
                 logger.exception(
                     "outreach/auto-call failed for incentive re-offer to %s on plan %s",

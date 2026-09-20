@@ -182,7 +182,7 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     # Ranking says who COULD take the slot; this decides whether calling the
     # top match is worth doing and drafts what the agent should say.
     outreach = evaluate_candidate(db, open_slot, top_candidate, top_score, slot.price)
-    outreach = maybe_auto_call(db, outreach)
+    outreach = maybe_auto_call(db, outreach, candidate=top_candidate)
 
     return {
         **plan,
