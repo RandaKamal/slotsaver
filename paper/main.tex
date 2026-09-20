@@ -368,12 +368,20 @@ result file. Scoring uses our validated port of the official evaluator.
 \paragraph{Run to run stability.} An interrupted earlier sweep had already
 scored part of the sample before it was stopped. Because sampling is seeded, the
 relaunched sweep drew the same items, giving an independent replication at no
-additional cost. Across \replPairs{} model and ceiling pairs, the two runs agreed
-on at least \replWorstAgree{} of items individually, and no pair was separable
-by a McNemar test. We report this because an evaluation that prints one accuracy
-figure per model gives a reader no way to judge how much of a reported gap is
-run to run noise, and in our case the ceiling effect is an order of magnitude
-larger than that noise while the between model differences are not.
+additional cost across \replPairs{} model and ceiling pairs. Neither pair was
+separable by a McNemar test, but per item agreement differed sharply between the
+two models, and instructively so. \nemotronName{}, run at temperature zero,
+scored 98.3\% of items identically across the two runs. \claudeName{}, which we
+could not pin to temperature zero because its SDK no longer exposes the
+parameter, agreed on only \replWorstAgree{} of items.
+
+We draw two things from this. First, the ceiling effect we report is far larger
+than either model's run to run variation, so it is not an artifact of sampling
+noise. Second, a single accuracy figure for a model running at a nondeterministic
+temperature is a draw from a distribution whose spread is not small, and an
+evaluation that reports one number without saying how many times it ran gives a
+reader no way to know this. We report it because it disciplines our own
+conclusions: it is part of why we decline to separate the models on accuracy.
 
 \section{Conclusion}
 

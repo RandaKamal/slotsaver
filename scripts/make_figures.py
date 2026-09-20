@@ -424,9 +424,12 @@ def write_significance(recs, out="table_sig.tex"):
     top = budgets[-1]
     by_model = {}
     for model in SERIES:
+        # attempted() matters here as much as in rate(): including errored
+        # calls would score a provider 429 as a wrong answer and hand the win
+        # to whichever model happened to be rate limited less.
         by_model[model] = {
             (r["example_id"], r.get("repeat", 0)): r["solved"]
-            for r in sel(recs, model, top)
+            for r in attempted(sel(recs, model, top))
         }
     bs = chr(92)
     rows, md = [], ["| Pair | Only A | Only B | Discordant | p (exact McNemar) |",
