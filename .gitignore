@@ -252,3 +252,6 @@ out/
 
 # DO App Platform spec pulled from the live app - contains real secret values.
 .do/live.yaml
+
+# NaturalPlan dataset (downloaded, CC-BY) and experiment outputs
+data/calendar_scheduling.json
