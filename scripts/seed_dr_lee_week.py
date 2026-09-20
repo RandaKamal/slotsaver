@@ -18,10 +18,10 @@ The scenario, by design:
    the awkward Friday 4:45 PM slot (right before close) but whose stored
    preference is early Thursday mornings. Accepting moves him too, freeing
    Friday 4:45 PM.
-4. Friday 4:45 PM opens -> the only remaining eligible candidate (Owen) is a
+4. Friday 4:45 PM opens -> the only remaining eligible candidate (Kevin) is a
    weak match (flexible, no strong time preference) - the offer times out,
    the queue exhausts, and the incentive fallback kicks in automatically.
-   Owen is also written as a customer who hasn't been in for months and
+   Kevin is also written as a customer who hasn't been in for months and
    mentions his son Max - stored preference text the phone agent can draw
    on for a personal, relationship-building call, not just a slot pitch.
 
@@ -129,7 +129,7 @@ def main() -> None:
                 "morning",
             ),
             (
-                "patient-owen",
+                "Kevin",
                 "Honestly it's been ages since I've been in - I think my last "
                 "cleaning was something like 8 months ago, sorry! My son Max just "
                 "started high school so things have been hectic. I'm pretty "

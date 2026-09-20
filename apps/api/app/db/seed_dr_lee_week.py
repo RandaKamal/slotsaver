@@ -93,7 +93,7 @@ def seed_dr_lee_week(db: Session) -> dict:
             "morning",
         ),
         (
-            "patient-owen",
+            "Kevin",
             "Honestly it's been ages since I've been in - I think my last "
             "cleaning was something like 8 months ago, sorry! My son Max just "
             "started high school so things have been hectic. I'm pretty "

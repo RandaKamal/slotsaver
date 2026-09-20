@@ -6,7 +6,7 @@
 .switcher { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; padding: 10px 14px; background: white; border: 1px solid var(--border); border-radius: 10px; }
 .switcher span { font-size: 11px; color: var(--muted); font-weight: 600; }
 .profileChip { border: 1px solid var(--border); background: #f8fafc; color: var(--navy); border-radius: 999px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
-.profileChip.active { background: var(--blue); border-color: #1f61d1; color: white; font-weight: 600; }
+.profileChip.active { background: var(--blue); border-color: #4338ca; color: white; font-weight: 600; }
 
 .section { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
 .section h2 { font-size: 14px; font-weight: 600; margin: 0 0 3px; }
@@ -23,7 +23,7 @@
 .removeButton { border: 1px solid var(--border); background: white; color: #a53434; border-radius: 6px; padding: 7px 10px; font-size: 12px; cursor: pointer; }
 
 .actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
-.saveButton { border: 1px solid #1f61d1; background: var(--blue); color: white; border-radius: 8px; padding: 9px 16px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.saveButton { border: 1px solid #4338ca; background: var(--blue); color: white; border-radius: 8px; padding: 9px 16px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .saveButton:disabled { opacity: 0.6; cursor: default; }
 .addButton { border: 1px dashed var(--border); background: transparent; color: #46586e; border-radius: 8px; padding: 8px 12px; font-size: 12px; cursor: pointer; align-self: flex-start; margin-top: 10px; }
 .savedNote { font-size: 12px; color: #1a7f4b; }
