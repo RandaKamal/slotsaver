@@ -104,13 +104,30 @@ def _tidy(ax):
     ax.spines["right"].set_visible(False)
 
 
+def truncated(r, budget):
+    return r["output_tokens"] >= budget
+
+
 def truncation_rate(rows, budget):
     """Fraction of generations that ended at the ceiling rather than at a stop
     token. Uses the emitted token count as a proxy, since not every vendor SDK
     surfaces a finish reason consistently."""
     if not rows:
         return 0.0
-    return sum(1 for r in rows if r["output_tokens"] >= budget) / len(rows)
+    return sum(1 for r in rows if truncated(r, budget)) / len(rows)
+
+
+def conditional_rate(rows, budget):
+    """Solve rate over generations that were allowed to finish.
+
+    This separates two things a headline accuracy number conflates: the model
+    proposed a wrong meeting time (a planning failure) versus the model never
+    got to propose one (a harness failure). Reported alongside, not instead of,
+    the unconditional rate, since a model that needs more room is genuinely more
+    expensive to deploy.
+    """
+    finished = [r for r in rows if not truncated(r, budget) and not r["error"]]
+    return rate(finished)
 
 
 def fig_token_budget(recs, out="fig1_token_budget.png"):
@@ -250,6 +267,9 @@ def write_latex(recs):
         "nemotronTruncLow": pct(truncation_rate(sel(recs, "nemotron", low), low)),
         "nemotronTruncHigh": pct(truncation_rate(sel(recs, "nemotron", top), top)),
         "claudeTruncLow": pct(truncation_rate(sel(recs, "claude", low), low)),
+        "nemotronCondLow": pct(conditional_rate(sel(recs, "nemotron", low), low)[0]),
+        "nemotronCondHigh": pct(conditional_rate(sel(recs, "nemotron", top), top)[0]),
+        "nemotronCondLowN": str(conditional_rate(sel(recs, "nemotron", low), low)[3]),
         "claudeLowAcc": pct(acc("claude", low)),
         "claudeHighAcc": pct(acc("claude", top)),
         "geminiLowAcc": pct(acc("gemini", low)),
@@ -274,18 +294,26 @@ def write_latex(recs):
         ok = [r for r in rows if not r["error"]]
         lat = sorted(r["latency_s"] for r in ok)[len(ok) // 2] if ok else 0.0
         tok = sum(r["output_tokens"] for r in ok) / max(1, len(ok))
+        trunc = truncation_rate(rows, top)
+        cond = conditional_rate(rows, top)[0]
         body.append(
             f"{LABEL[model]} & {p * 100:.1f} & {lo * 100:.1f}--{hi * 100:.1f} & "
-            f"{n} & {lat:.1f} & {tok:.0f} " + bs * 2
+            f"{trunc * 100:.1f} & {cond * 100:.1f} & {n} & {lat:.1f} & {tok:.0f} " + bs * 2
         )
     table = [
         bs + "begin{table}[t]", bs + "centering", bs + "small",
-        bs + "begin{tabular}{lrrrrr}", bs + "toprule",
-        "Model & Solve " + bs + "% & 95" + bs + "% CI & $n$ & Lat.(s) & Out tok " + bs * 2,
+        bs + "begin{tabular}{lrrrrrrr}", bs + "toprule",
+        "Model & Solve " + bs + "% & 95" + bs + "% CI & Trunc " + bs + "% & Cond "
+        + bs + "% & $n$ & Lat.(s) & Out tok " + bs * 2,
         bs + "midrule", *body, bs + "bottomrule", bs + "end{tabular}",
-        bs + "caption{Solve rate at a ceiling of " + str(top) + " tokens, where no "
-        "model is truncated. Intervals are 95" + bs + "% Wilson. Latency is the median "
-        "of successful calls, timed around the request only.}",
+        bs + "caption{Results at a ceiling of " + str(top) + " tokens. Solve "
+        + bs + "% is the headline number an evaluation would normally report. "
+        "Trunc " + bs + "% is the fraction of generations that ended at the ceiling "
+        "rather than at a stop token; Cond " + bs + "% is the solve rate over only "
+        "those generations that were allowed to finish. Where Trunc " + bs + "% is "
+        "above zero, Solve " + bs + "% understates the model. Intervals are 95"
+        + bs + "% Wilson. Latency is the median of successful calls, timed around "
+        "the request only.}",
         bs + "label{tab:main}", bs + "end{table}",
     ]
     (PAPER / "table_main.tex").write_text("\n".join(table) + "\n", encoding="utf-8")
@@ -345,8 +373,9 @@ def write_significance(recs, out="table_sig.tex"):
 def write_markdown_table(recs, out="table1.md"):
     budgets = sorted({r["max_tokens"] for r in recs if r["max_tokens"]})
     top = budgets[-1] if budgets else None
-    lines = ["| Model | Solve rate | 95% CI | n | Errors | Median latency | Mean out tokens |",
-             "|---|---|---|---|---|---|---|"]
+    lines = ["| Model | Solve rate | 95% CI | Truncated | Cond. solve | n | Errors "
+             "| Median latency | Mean out tokens |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for model in SERIES:
         rows = sel(recs, model, top)
         if not rows:
@@ -356,8 +385,9 @@ def write_markdown_table(recs, out="table1.md"):
         lat = sorted(r["latency_s"] for r in ok)[len(ok) // 2] if ok else 0.0
         tok = sum(r["output_tokens"] for r in ok) / max(1, len(ok))
         errs = sum(bool(r["error"]) for r in rows)
-        lines.append(f"| {LABEL[model]} | {p:.1%} | {lo:.3f}-{hi:.3f} | {n} | {errs} "
-                     f"| {lat:.1f}s | {tok:.0f} |")
+        lines.append(f"| {LABEL[model]} | {p:.1%} | {lo:.3f}-{hi:.3f} "
+                     f"| {truncation_rate(rows, top):.1%} | {conditional_rate(rows, top)[0]:.1%} "
+                     f"| {n} | {errs} | {lat:.1f}s | {tok:.0f} |")
     (PAPER / out).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
 

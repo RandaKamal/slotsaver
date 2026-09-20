@@ -168,10 +168,25 @@ ceiling is not neutral across models.}
 \label{fig:budget}
 \end{figure}
 
-\subsection{Model comparison at an adequate ceiling}
-Table~\ref{tab:main} reports all three models at a ceiling high enough that no
-model is truncated. Figure~\ref{fig:difficulty} decomposes accuracy by
-participant count, the benchmark's own difficulty axis.
+\subsection{Model comparison, and what counts as an adequate ceiling}
+Table~\ref{tab:main} reports all three models at the highest ceiling we ran.
+Alongside the headline solve rate we report two columns that an evaluation would
+not normally include: the truncation rate, and the solve rate computed over only
+those generations that were allowed to finish.
+
+The second column is the one that matters for interpreting the first. A
+generation that is cut off and a generation that proposes the wrong meeting time
+are the same event to an exact match scorer, but they are completely different
+events for anyone deciding which model to deploy. Separating them shows that
+\nemotronName{} remains truncated on \nemotronTruncHigh{} of items even at
+\tokenHighBudget{} tokens, so its headline number is still an underestimate at a
+ceiling most practitioners would consider generous. We therefore resist the
+phrase ``adequate ceiling'' as an absolute: adequacy is a property of a model
+and a harness together, and the only way to know a ceiling was adequate is to
+measure the truncation rate and find it at zero.
+
+Figure~\ref{fig:difficulty} decomposes accuracy by participant count, the
+benchmark's own difficulty axis.
 
 \input{table_main}
 \input{table_sig}
