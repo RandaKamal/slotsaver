@@ -79,9 +79,11 @@ def main() -> None:
     # to finish; truncating it mid-thought would score a formatting artefact as
     # a planning failure. Output tokens are recorded so the cost of that room
     # shows up in the results rather than being hidden.
-    ap.add_argument("--max-tokens", type=int, default=4096)
+    ap.add_argument("--max-tokens", type=int, nargs="+", default=[4096],
+                    help="one or more ceilings; several = a sweep")
     args = ap.parse_args()
 
+    budgets = args.max_tokens
     data = load_dataset()
     sample = stratified_sample(data, args.per_bucket, args.seed)
     prompt_key = f"prompt_{args.shots}shot"
@@ -91,7 +93,8 @@ def main() -> None:
     )
 
     jobs = [
-        (model, key, item, rep)
+        (model, key, item, rep, budget)
+        for budget in budgets
         for model in args.models
         for key, item in sample
         for rep in range(args.repeats)
@@ -101,15 +104,16 @@ def main() -> None:
     done = 0
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {
-            pool.submit(RUNNERS[m], it[prompt_key], args.max_tokens): (m, k, it, rep)
-            for m, k, it, rep in jobs
+            pool.submit(RUNNERS[m], it[prompt_key], b): (m, k, it, rep, b)
+            for m, k, it, rep, b in jobs
         }
         for future in as_completed(futures):
-            model, key, item, rep = futures[future]
+            model, key, item, rep, budget = futures[future]
             res = future.result()
             records.append(
                 {
                     "model": model,
+                    "max_tokens": budget,
                     "example_id": key,
                     "repeat": rep,
                     "num_people": str(item["num_people"]),
@@ -124,8 +128,13 @@ def main() -> None:
                 }
             )
             done += 1
+            if done % 50 == 0:
+                RESULTS_DIR.mkdir(exist_ok=True)
+                (RESULTS_DIR / "_checkpoint.json").write_text(
+                    json.dumps({"records": records}), encoding="utf-8"
+                )
             if done % 25 == 0 or done == len(jobs):
-                print(f"  {done}/{len(jobs)} calls  ({time.time() - started:.0f}s)")
+                print(f"  {done}/{len(jobs)} calls  ({time.time() - started:.0f}s)", flush=True)
 
     RESULTS_DIR.mkdir(exist_ok=True)
     stamp = time.strftime("%Y%m%d_%H%M%S")
@@ -136,6 +145,7 @@ def main() -> None:
                 "benchmark": "natural_plan_calendar_scheduling",
                 "source": "arXiv:2406.04520 / github.com/google-deepmind/natural-plan",
                 "shots": args.shots,
+                "max_tokens": budgets,
                 "per_bucket": args.per_bucket,
                 "seed": args.seed,
                 "repeats": args.repeats,

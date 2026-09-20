@@ -255,3 +255,5 @@ out/
 
 # NaturalPlan dataset (downloaded, CC-BY) and experiment outputs
 data/calendar_scheduling.json
+results/_checkpoint.json
+results/sweep.log

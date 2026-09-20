@@ -1,0 +1,15 @@
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Model & Solve \% & 95\% CI & $n$ & Lat.(s) & Out tok \\
+\midrule
+Nemotron Super & 83.3 & 43.6--97.0 & 6 & 22.7 & 2502 \\
+Claude Haiku 4.5 & 83.3 & 43.6--97.0 & 6 & 3.8 & 568 \\
+Gemini 3.5 Flash & 83.3 & 43.6--97.0 & 6 & 15.4 & 21 \\
+\bottomrule
+\end{tabular}
+\caption{Solve rate at a ceiling of 4096 tokens, where no model is truncated. Intervals are 95\% Wilson. Latency is the median of successful calls, timed around the request only.}
+\label{tab:main}
+\end{table}

@@ -16,7 +16,11 @@ from app.agents.nemotron.client import _TRANSIENT, _with_backoff, nim_client
 
 NEMOTRON_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
-GEMINI_MODEL = "gemini-3.6-flash"
+# gemini-3.6-flash caps the free tier at 20 requests, too few to run this
+# experiment. gemini-3.5-flash is the nearest available flash-tier model with
+# workable quota, so it is the tier-matched comparator against Claude Haiku 4.5
+# and Nemotron Super. Measured: 11/12 succeed at 2s spacing.
+GEMINI_MODEL = "gemini-3.5-flash"
 
 # Nemotron is a sparse MoE: 120B total parameters, ~12B active per token.
 # Claude and Gemini parameter counts are NOT published - do not invent them.
@@ -122,7 +126,7 @@ def run_claude(prompt: str, max_tokens: int = 1024, temperature: float = 0.0) ->
 # the retry loop absorbs the rest, so quota errors do not get recorded as
 # planning failures - that would silently understate the model.
 _GEMINI_GATE = threading.Lock()
-_GEMINI_MIN_INTERVAL = 4.0  # seconds -> 15 rpm, under the 20/min free-tier cap
+_GEMINI_MIN_INTERVAL = 2.0  # seconds -> 30 rpm, measured safe for this model
 _gemini_last_call = [0.0]
 
 
@@ -153,7 +157,12 @@ def run_gemini(prompt: str, max_tokens: int = 1024, temperature: float = 0.0) ->
 
         response, elapsed = _retrying(
             _one,
-            is_retryable=lambda e: "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e),
+            # 503 UNAVAILABLE ("high demand") is transient too, and scoring it
+            # as a planning failure would understate the model.
+            is_retryable=lambda e: any(
+                s in str(e)
+                for s in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "high demand")
+            ),
         )
         um = getattr(response, "usage_metadata", None)
         return ModelResult(
