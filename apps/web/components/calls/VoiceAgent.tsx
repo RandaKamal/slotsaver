@@ -7,8 +7,9 @@ import {
   type ConversationStatus,
 } from "@elevenlabs/react";
 
+import { API_URL } from "@/lib/constants";
+
 const AGENT_ID = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type VoiceState = "disconnected" | "connecting" | "listening" | "speaking" | "error";
 

@@ -1,20 +1,61 @@
-version: "3.9"
+# Local stack that mirrors production: Postgres instead of SQLite, both apps
+# built from the same Dockerfiles App Platform uses. Use this to catch
+# Postgres-only breakage before it reaches the deployed app.
+#
+#   docker compose up --build
+#   web -> http://localhost:3000    api -> http://localhost:8000
+#
+# For everyday development the plain uvicorn/next dev loop in HANDOFF.md is
+# still faster - this exists to reproduce the deployed environment.
 
 services:
-  api:
-    build: ./apps/api
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: slotsaver
+      POSTGRES_PASSWORD: slotsaver
+      POSTGRES_DB: slotsaver
     ports:
-      - "8000:8000"
+      - "5432:5432"
+    volumes:
+      # Named volume, so the data survives `docker compose down` - the exact
+      # property App Platform cannot give a container filesystem.
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slotsaver"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./apps/api
+    ports:
+      - "8000:8080"
     env_file:
       - .env
-    volumes:
-      - ./apps/api:/app
+    environment:
+      # Overrides the sqlite DATABASE_URL in .env - an `environment:` entry
+      # wins over env_file.
+      DATABASE_URL: postgresql://slotsaver:slotsaver@db:5432/slotsaver
+      CORS_ALLOW_ORIGINS: http://localhost:3000
+    depends_on:
+      db:
+        condition: service_healthy
 
   web:
-    build: ./apps/web
+    build:
+      context: ./apps/web
+      args:
+        # NEXT_PUBLIC_* must be present at BUILD time. Here web and api are on
+        # different ports, so unlike production this needs an explicit
+        # cross-origin URL. Compose substitutes these from the root .env.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_ELEVENLABS_AGENT_ID: ${NEXT_PUBLIC_ELEVENLABS_AGENT_ID:-}
     ports:
-      - "3000:3000"
-    env_file:
-      - .env
+      - "3000:8080"
     depends_on:
       - api
+
+volumes:
+  pgdata:

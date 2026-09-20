@@ -1,13 +1,19 @@
-"""Repoints the three phone-call webhook tools at a new public base URL.
+"""Repoints the five phone-call webhook tools at a new public base URL.
 
-Run this every time your ngrok URL changes (its free tier gives you a new
-one on every restart):
+Run this whenever the base URL the tools should hit changes:
 
-    python scripts/update_call_tool_urls.py https://<your-ngrok-id>.ngrok-free.app
+    # production, after deploying to App Platform
+    python scripts/update_call_tool_urls.py https://<app>.ondigitalocean.app
 
-Only touches the *_call tools (webhook, used for phone calls) - the plain
-client tools the browser widget uses are untouched and keep working against
-localhost regardless.
+    # local testing through a tunnel (a new URL on every cloudflared restart)
+    python scripts/update_call_tool_urls.py https://<id>.trycloudflare.com
+
+These tools are global to the ElevenLabs account, not per-environment: pointing
+them at a tunnel takes production down, and pointing them at production stops
+local call testing. Whoever ran it last wins, so say so in the team chat.
+
+Only touches the *_call tools (webhooks, used for phone calls) - the plain
+client tools the browser widget uses are executed in the page and are untouched.
 """
 
 import sys
@@ -32,6 +38,10 @@ def main() -> None:
         print(__doc__)
         raise SystemExit(1)
     base_url = sys.argv[1].rstrip("/")
+    if not base_url.startswith("https://"):
+        # ElevenLabs will accept the PATCH and then fail every tool call at
+        # run time, which surfaces as the agent going quiet mid-conversation.
+        raise SystemExit(f"refusing to set a non-HTTPS webhook URL: {base_url}")
     key = os.environ["ELEVENLABS_API_KEY"]
     headers = {"xi-api-key": key, "Content-Type": "application/json"}
 

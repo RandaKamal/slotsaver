@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -26,11 +28,21 @@ for _added in ensure_columns(engine):
 
 app = FastAPI(title="SlotSaver API")
 
-# The Next.js dev server (:3000) calls this API (:8000) cross-origin — the
-# browser blocks that without CORS. Dev-only origins; tighten before deploy.
+# In production the frontend and this API are served from a single App
+# Platform app (/ -> web, /api -> here), so requests are same-origin and CORS
+# never comes into it. It is still needed for the Next.js dev server on :3000,
+# and CORS_ALLOW_ORIGINS adds any extra origin (a split deployment, a preview
+# build) as a comma-separated list without a code change.
+_DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+_EXTRA_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_DEV_ORIGINS + _EXTRA_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

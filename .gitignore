@@ -247,3 +247,6 @@ out/
 *.sqlite3
 
 *.tsbuildinfo
+
+# DO App Platform spec pulled from the live app - contains real secret values.
+.do/live.yaml

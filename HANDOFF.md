@@ -65,36 +65,45 @@ Webhook tool IDs are listed in `scripts/update_call_tool_urls.py`.
 
 ---
 
-## Deployment notes — read before deploying
+## Deployment notes
 
-1. **The cloudflare tunnel is temporary.** ElevenLabs webhook tools currently
-   point at a `trycloudflare.com` URL from a `cloudflared` process on Kevin's
-   laptop. On deploy, repoint them at the real domain:
-   `python scripts/update_call_tool_urls.py https://<prod-domain>`
-   Without this the agent can talk but every tool call fails mid-call.
+**The deploy is prepared but not yet executed.** Everything in the repo is
+ready; someone still has to run it against a DigitalOcean account. The runbook
+is `DEPLOY.md` — follow that, not this section.
 
-2. **SQLite will not survive a container restart.** `DATABASE_URL` is
-   `sqlite:///./relay.db`, anchored to `apps/api`. Either mount a volume or move
-   to managed Postgres. `app/db/migrate.py` only does additive SQLite
-   `ALTER TABLE` — it is not a real migration tool and needs replacing for
-   Postgres.
+Shape: App Platform, one app, two components behind one hostname
+(`/` -> web, `/api` -> api), managed Postgres, spec in `.do/app.yaml`.
 
-3. **CORS is hardcoded to `localhost:3000`** in `app/main.py`. Add the prod
-   frontend origin.
+Status of the four landmines this section used to list:
 
-4. **`NEXT_PUBLIC_API_URL` is baked in at BUILD time** by `next.config.js`
-   reading the repo-root `.env`. It must be correct before the frontend build,
-   not at runtime.
+1. **Webhook tools still point at the cloudflare tunnel.** Unchanged and still
+   the biggest trap — `python scripts/update_call_tool_urls.py https://<prod>`
+   is step 4 of `DEPLOY.md`. The script now refuses a non-HTTPS URL.
+2. **SQLite is gone in production.** App Platform has no persistent disks, so
+   it was never survivable there; the spec provisions managed Postgres and
+   `app/db/migrate.py` now renders DDL per dialect. SQLite is still the local
+   default.
+3. **CORS is no longer hardcoded.** Dev origins are built in, extras come from
+   `CORS_ALLOW_ORIGINS`. In production it is moot — same origin.
+4. **`NEXT_PUBLIC_API_URL` no longer needs to be baked in.** Unset, the client
+   uses same-origin relative paths (`apps/web/lib/constants.ts`). Only set it
+   if web and api are ever split into separate apps.
 
-5. **Secrets.** `.env` is gitignored and holds NVIDIA, ElevenLabs, Twilio,
-   Gemini and Anthropic keys. Use the platform secret store. The ElevenLabs key
-   has been exposed in chat transcripts more than once; rotating it is overdue,
-   and Kevin has repeatedly deprioritised it — raise it once, respect the answer.
+Still true and still worth reading:
 
+5. **Secrets.** `.env` is gitignored. `.do/app.yaml` carries `CHANGE_ME`
+   placeholders, so re-applying it blind wipes the real keys — pull the live
+   spec first (`doctl apps spec get`). The ElevenLabs key has been exposed in
+   chat transcripts more than once; rotating it is overdue, and Kevin has
+   repeatedly deprioritised it — raise it once, respect the answer.
 6. **Twilio is still a TRIAL account.** Every outbound call plays "press any key
    to continue" first, and only numbers verified in the Twilio console can be
    called. This cannot be disabled via API. Upgrading (a small top-up) removes
    both limits and is required before demoing to anyone else's phone.
+
+Not verified: nothing has been run against a real Postgres server. The schema
+was compiled offline against the PostgreSQL dialect and the models are all
+portable ORM types, but first contact with the managed database is still ahead.
 
 ---
 

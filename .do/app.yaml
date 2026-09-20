@@ -1,0 +1,154 @@
+# DigitalOcean App Platform spec for SlotSaver.
+#
+# One app, two components, ONE origin:
+#
+#   https://<app>.ondigitalocean.app/            -> web (Next.js)
+#   https://<app>.ondigitalocean.app/api/...     -> api (FastAPI)
+#   https://<app>.ondigitalocean.app/health      -> api
+#   https://<app>.ondigitalocean.app/playground  -> api
+#
+# Sharing one origin is deliberate. It removes the CORS problem and the
+# build-time NEXT_PUBLIC_API_URL problem outright rather than patching them,
+# and it gives the ElevenLabs webhook tools a single stable HTTPS base URL.
+#
+#   Create:  doctl apps create --spec .do/app.yaml
+#   Update:  doctl apps update <app-id> --spec .do/app.yaml
+#
+# SECRETS ARE PLACEHOLDERS HERE ON PURPOSE - real keys never go in git.
+# Fill them in the DO control panel after the first create. Once you have,
+# DO NOT re-apply this file blind: pull the live spec first with
+# `doctl apps spec get <app-id> > .do/live.yaml` or you will overwrite every
+# real key with CHANGE_ME. See DEPLOY.md.
+
+name: slotsaver
+region: nyc
+
+ingress:
+  rules:
+    # preserve_path_prefix is load-bearing. Without it App Platform strips the
+    # matched prefix, so /api/voice/book reaches FastAPI as /voice/book and
+    # 404s - which during a live call looks like every agent tool silently
+    # failing, with nothing in the app logs to explain it.
+    - match:
+        path:
+          prefix: /api
+      component:
+        name: api
+        preserve_path_prefix: true
+    - match:
+        path:
+          prefix: /health
+      component:
+        name: api
+        preserve_path_prefix: true
+    - match:
+        path:
+          prefix: /playground
+      component:
+        name: api
+        preserve_path_prefix: true
+    # Catch-all goes LAST - the frontend serves everything else.
+    - match:
+        path:
+          prefix: /
+      component:
+        name: web
+
+databases:
+  # App Platform has no persistent disks, so SQLite cannot survive a deploy or
+  # a platform-initiated restart. This is the managed Postgres that replaces it.
+  # production: false = the ~$7/mo dev database. Upgradeable in place.
+  - name: db
+    engine: PG
+    version: "16"
+    production: false
+
+services:
+  - name: api
+    github:
+      repo: RandaKamal/slotsaver
+      branch: main
+      deploy_on_push: true
+    source_dir: apps/api
+    dockerfile_path: apps/api/Dockerfile
+    http_port: 8080
+    instance_count: 1
+    # 0.5GB is the cheaper slug, but this process imports the openai, anthropic,
+    # google-genai and elevenlabs SDKs at startup and sits close to that ceiling.
+    # 1GB is the difference between a demo and an OOM restart mid-call.
+    instance_size_slug: apps-s-1vcpu-1gb
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 20
+    envs:
+      # ${db.DATABASE_URL} is substituted by the platform with the managed
+      # Postgres connection string, sslmode included.
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: BACKEND_BASE_URL
+        scope: RUN_TIME
+        value: ${APP_URL}
+      - key: CORS_ALLOW_ORIGINS
+        scope: RUN_TIME
+        value: ${APP_URL}
+      - key: NVIDIA_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: CHANGE_ME
+      - key: ELEVENLABS_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: CHANGE_ME
+      - key: ELEVENLABS_AGENT_ID
+        scope: RUN_TIME
+        value: agent_2801m2xmgxn0ezhvwewp08yzrphz
+      - key: ELEVENLABS_PHONE_AGENT_ID
+        scope: RUN_TIME
+        value: agent_0101m2yctba3fgcadx5daphpfv2c
+      - key: ELEVENLABS_PHONE_NUMBER_ID
+        scope: RUN_TIME
+        value: phnum_5001m2ybj5q6f62r60s66r7a1kbz
+      - key: TWILIO_ACCOUNT_SID
+        scope: RUN_TIME
+        type: SECRET
+        value: CHANGE_ME
+      - key: TWILIO_AUTH_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+        value: CHANGE_ME
+      - key: TWILIO_PHONE_NUMBER
+        scope: RUN_TIME
+        value: "+15722348213"
+      # Benchmark-only baselines. Not used by the product flow - drop these two
+      # if you would rather not put the keys on the server at all.
+      - key: GEMINI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: CHANGE_ME
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: CHANGE_ME
+
+  - name: web
+    github:
+      repo: RandaKamal/slotsaver
+      branch: main
+      deploy_on_push: true
+    source_dir: apps/web
+    dockerfile_path: apps/web/Dockerfile
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      # BUILD_TIME because NEXT_PUBLIC_* is inlined into the client bundle by
+      # the compiler - setting it at run time does nothing. Not a secret: the
+      # browser widget needs this id client-side to open a session.
+      - key: NEXT_PUBLIC_ELEVENLABS_AGENT_ID
+        scope: BUILD_TIME
+        value: agent_2801m2xmgxn0ezhvwewp08yzrphz
+      # NEXT_PUBLIC_API_URL is deliberately NOT set. Unset, the client falls
+      # back to same-origin relative paths (lib/constants.ts), which is correct
+      # here by construction and cannot go stale if the app URL ever changes.
+      # Only set it if you split web and api into separate apps.
