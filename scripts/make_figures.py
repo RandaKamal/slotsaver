@@ -39,6 +39,13 @@ LABEL_DY = {"nemotron": 13, "claude": 0, "gemini": -13}
 # points cluster at similar accuracy
 LABEL_DY_SCATTER = {"nemotron": 0, "claude": 30, "gemini": -30}
 
+# Figures plot the primary comparison only. Gemini is excluded because its
+# records predate finish_reason capture, so its truncation rate is measured by
+# the token proxy that we showed is unsound for models reasoning in hidden
+# tokens. Plotting it would draw a flat zero line asserting the very claim the
+# raw generations refute. It appears in the tables, labelled preliminary.
+PRIMARY = ("nemotron", "claude")
+
 plt.rcParams.update({
     "figure.dpi": 200, "savefig.dpi": 200, "savefig.bbox": "tight",
     "font.size": 9, "axes.titlesize": 10, "axes.labelsize": 9,
@@ -176,7 +183,8 @@ def fig_token_budget(recs, out="fig1_token_budget.png"):
     fig, (ax, bx) = plt.subplots(
         2, 1, figsize=(5.4, 5.0), sharex=True, gridspec_kw={"hspace": 0.18}
     )
-    for model, colour in SERIES.items():
+    for model in PRIMARY:
+        colour = SERIES[model]
         xs, ys, lo_e, hi_e, ts = [], [], [], [], []
         for b in budgets:
             rows = sel(recs, model, b)
@@ -228,7 +236,8 @@ def fig_difficulty(recs, out="fig2_difficulty.png"):
     # another and the lower ones would vanish. A small horizontal dodge keeps
     # every series visible without moving any point to a different bucket.
     dodge = {"nemotron": -0.08, "claude": 0.0, "gemini": 0.08}
-    for model, colour in SERIES.items():
+    for model in PRIMARY:
+        colour = SERIES[model]
         xs, ys, lo_e, hi_e = [], [], [], []
         for p_ in people:
             rows = sel(recs, model, top, p_)
@@ -259,7 +268,8 @@ def fig_efficiency(recs, out="fig3_efficiency.png"):
     top = budgets[-1] if budgets else None
     fig, ax = plt.subplots(figsize=(5.4, 3.3))
     max_tok = 0
-    for model, colour in SERIES.items():
+    for model in PRIMARY:
+        colour = SERIES[model]
         all_rows = sel(recs, model, top)
         ok = [r for r in all_rows if not r["error"]]
         if not ok:
