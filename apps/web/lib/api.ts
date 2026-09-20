@@ -7,7 +7,7 @@
  * Shapes below match exactly what those three call sites already read.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { signal, cache: "no-store" });

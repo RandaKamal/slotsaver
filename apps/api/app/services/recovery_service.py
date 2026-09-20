@@ -139,7 +139,12 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
             record.current_offer_at = None
         else:
             next_patient_id = ranked[record.current_candidate_index]
-            statuses.setdefault(next_patient_id, "offered")
+            # Unconditional, not setdefault: a candidate re-offered during the
+            # incentive round may already have "declined"/"expired" from the
+            # earlier full-price round. Being offered again must overwrite
+            # that stale status, not be suppressed by it (matches
+            # apply_incentive_decision's own first-offer assignment below).
+            statuses[next_patient_id] = "offered"
             record.current_offer_at = _utcnow()
         record.candidate_statuses = statuses
 
