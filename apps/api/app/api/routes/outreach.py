@@ -101,17 +101,26 @@ def approve(attempt_id: int, payload: DecisionRequest, db: Session = Depends(get
         if slot_row
         else None
     )
+    call_error: str | None = None
     try:
         place_call(attempt, slot, build_patient_brief(db, attempt.patient_id))
         attempt.status = "placed"
     except CallNotConfigured as exc:
         logger.info("attempt %s approved but not callable yet: %s", attempt_id, exc)
-    except Exception:
+        call_error = f"not configured: {exc}"
+    except Exception as exc:
         logger.exception("call placement failed for attempt %s", attempt_id)
         attempt.status = "failed"
+        call_error = str(exc)
     db.commit()
     db.refresh(attempt)
-    return _serialize(attempt)
+    result = _serialize(attempt)
+    # Surfaced here (not just logged) because this deployment's operator may
+    # not have log access - a 500-line stack trace only in Render's own logs
+    # is useless if nobody can open Render's logs mid-demo.
+    if call_error:
+        result["call_error"] = call_error
+    return result
 
 
 @router.post("/{attempt_id}/reject")
