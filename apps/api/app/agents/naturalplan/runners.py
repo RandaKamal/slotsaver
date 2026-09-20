@@ -148,6 +148,16 @@ def _gemini_pace() -> None:
         _gemini_last_call[0] = time.monotonic()
 
 
+def _gemini_retryable(exc: Exception) -> bool:
+    msg = str(exc)
+    if "PerDay" in msg or "RequestsPerDay" in msg or "per day" in msg.lower():
+        return False  # the quota resets tomorrow, not in 32 seconds
+    return any(
+        s in msg
+        for s in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "high demand")
+    )
+
+
 def run_gemini(prompt: str, max_tokens: int = 1024, temperature: float = 0.0) -> ModelResult:
     if not os.environ.get("GEMINI_API_KEY"):
         return ModelResult(error="GEMINI_API_KEY not set")
@@ -167,11 +177,10 @@ def run_gemini(prompt: str, max_tokens: int = 1024, temperature: float = 0.0) ->
         response, elapsed = _retrying(
             _one,
             # 503 UNAVAILABLE ("high demand") is transient too, and scoring it
-            # as a planning failure would understate the model.
-            is_retryable=lambda e: any(
-                s in str(e)
-                for s in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "high demand")
-            ),
+            # as a planning failure would understate the model. A PER DAY quota
+            # exhaustion is emphatically NOT transient: retrying it burns hours
+            # of wall clock to arrive at the same refusal, so it fails fast.
+            is_retryable=_gemini_retryable,
         )
         um = getattr(response, "usage_metadata", None)
         cands = getattr(response, "candidates", None) or []
