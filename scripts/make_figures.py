@@ -47,9 +47,19 @@ plt.rcParams.update({
 })
 
 
-def load(pattern="results/naturalplan_*.json"):
+def load(pattern="results/naturalplan_*.json", include_checkpoint=True):
+    """Loads completed result files, and optionally the in-flight checkpoint.
+
+    The checkpoint lets figures be rebuilt from a run that is still going, which
+    matters because ceilings are executed in ascending order: the highest and
+    most important ceiling finishes last.
+    """
     recs = []
-    for f in sorted(glob.glob(str(_ROOT / pattern))):
+    files = sorted(glob.glob(str(_ROOT / pattern)))
+    ckpt = _ROOT / "results" / "_checkpoint.json"
+    if include_checkpoint and ckpt.exists():
+        files.append(str(ckpt))
+    for f in files:
         blob = json.loads(Path(f).read_text(encoding="utf-8"))
         mt = blob.get("max_tokens")
         default = mt if isinstance(mt, int) else None
@@ -58,7 +68,16 @@ def load(pattern="results/naturalplan_*.json"):
                 r["max_tokens"] = default
             r["_shots"] = blob.get("shots")
             recs.append(r)
-    return recs
+    # A finished run rewrites everything the checkpoint held, so drop duplicates
+    # on the identity of a single call.
+    seen, unique = set(), []
+    for r in recs:
+        key = (r["model"], r.get("max_tokens"), r["example_id"], r.get("repeat", 0))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(r)
+    return unique
 
 
 def rate(rows):
@@ -85,20 +104,37 @@ def _tidy(ax):
     ax.spines["right"].set_visible(False)
 
 
+def truncation_rate(rows, budget):
+    """Fraction of generations that ended at the ceiling rather than at a stop
+    token. Uses the emitted token count as a proxy, since not every vendor SDK
+    surfaces a finish reason consistently."""
+    if not rows:
+        return 0.0
+    return sum(1 for r in rows if r["output_tokens"] >= budget) / len(rows)
+
+
 def fig_token_budget(recs, out="fig1_token_budget.png"):
+    """Two stacked panels sharing an x axis: the effect, then its mechanism.
+
+    Deliberately not a dual-axis chart. Solve rate and truncation rate are
+    different measures and get their own panel each.
+    """
     budgets = sorted({r["max_tokens"] for r in recs if r["max_tokens"]})
     if len(budgets) < 2:
         print("  skip fig1: needs >= 2 ceilings")
         return
-    fig, ax = plt.subplots(figsize=(5.4, 3.3))
+    fig, (ax, bx) = plt.subplots(
+        2, 1, figsize=(5.4, 5.0), sharex=True, gridspec_kw={"hspace": 0.18}
+    )
     for model, colour in SERIES.items():
-        xs, ys, lo_e, hi_e = [], [], [], []
+        xs, ys, lo_e, hi_e, ts = [], [], [], [], []
         for b in budgets:
             rows = sel(recs, model, b)
             if not rows:
                 continue
             p, lo, hi, _ = rate(rows)
             xs.append(b); ys.append(p); lo_e.append(p - lo); hi_e.append(hi - p)
+            ts.append(truncation_rate(rows, b))
         if not xs:
             continue
         ax.errorbar(xs, ys, yerr=[lo_e, hi_e], color=colour, linewidth=2,
@@ -110,16 +146,24 @@ def fig_token_budget(recs, out="fig1_token_budget.png"):
         ax.annotate(LABEL[model], (xs[-1], ys[-1]), textcoords="offset points",
                     xytext=(9, LABEL_DY[model]), color=INK2, fontsize=7.5,
                     va="center")
-    ax.set_xscale("log", base=2)
-    ax.set_xticks(budgets)
-    ax.set_xticklabels([str(b) for b in budgets])
-    ax.set_xlabel("Output token ceiling (max_tokens)")
+        bx.plot(xs, ts, color=colour, linewidth=2, marker="o", markersize=6,
+                label=LABEL[model])
+
+    for a in (ax, bx):
+        a.set_xscale("log", base=2)
+        a.set_ylim(-0.03, 1.03)
+        a.set_xlim(budgets[0] * 0.85, budgets[-1] * 2.1)
+        _tidy(a)
+    bx.set_xticks(budgets)
+    bx.set_xticklabels([str(b) for b in budgets])
     ax.set_ylabel("Solve rate")
-    ax.set_ylim(-0.03, 1.03)
-    ax.set_xlim(budgets[0] * 0.85, budgets[-1] * 2.1)
-    ax.set_title("Solve rate collapses when a model cannot finish reasoning", loc="left")
-    ax.legend(loc="upper left", fontsize=7.5, handlelength=1.4)
-    _tidy(ax)
+    bx.set_ylabel("Truncated at ceiling")
+    bx.set_xlabel("Output token ceiling (max_tokens)")
+    ax.set_title("(a) Solve rate collapses when a model cannot finish reasoning",
+                 loc="left")
+    bx.set_title("(b) The mechanism: generations cut off before an answer",
+                 loc="left")
+    ax.legend(loc="lower right", fontsize=7.5, handlelength=1.4)
     fig.savefig(FIGDIR / out)
     plt.close(fig)
     print(f"  {out}")
@@ -203,6 +247,9 @@ def write_latex(recs):
         "geminiName": "Gemini 3.5 Flash",
         "nemotronLowAcc": pct(acc("nemotron", low)),
         "nemotronHighAcc": pct(acc("nemotron", top)),
+        "nemotronTruncLow": pct(truncation_rate(sel(recs, "nemotron", low), low)),
+        "nemotronTruncHigh": pct(truncation_rate(sel(recs, "nemotron", top), top)),
+        "claudeTruncLow": pct(truncation_rate(sel(recs, "claude", low), low)),
         "claudeLowAcc": pct(acc("claude", low)),
         "claudeHighAcc": pct(acc("claude", top)),
         "geminiLowAcc": pct(acc("gemini", low)),

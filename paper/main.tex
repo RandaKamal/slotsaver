@@ -27,12 +27,15 @@ jointly determined by the output token ceiling the evaluator happened to choose.
 On the Calendar Scheduling task of \textsc{Natural Plan} \cite{zheng2024naturalplan},
 raising the ceiling from \tokenLowBudget{} to \tokenHighBudget{} tokens moves
 \nemotronName{} from \nemotronLowAcc{} to \nemotronHighAcc{} with the prompt, the
-sample and the scoring held fixed. The model was not failing to plan. It was
-being cut off before it could answer, and an exact match scorer recorded that
-truncation as a planning error. We quantify the effect across three tier matched
-models, show that its size depends on how verbosely a model reasons, and argue
-that the generation ceiling is a confound that evaluation reports must state
-alongside accuracy. We release the harness and the per call records.
+sample and the scoring held fixed. The model was not failing to plan. At the
+lower ceiling \nemotronTruncLow{} of its generations were cut off before an
+answer was emitted, and an exact match scorer recorded that truncation as a
+planning error. We quantify the effect across three tier matched models, show
+that its size tracks how verbosely a model reasons, and separate it from test
+time compute scaling by reporting the truncation rate alongside accuracy. We
+argue that the generation ceiling is a confound evaluation reports must state,
+and that a truncation rate materially above zero invalidates the accuracy number
+it accompanies. We release the harness and the per call records.
 \end{abstract}
 
 \section{Introduction}
@@ -138,12 +141,23 @@ where a normal approximation does not.
 \section{Results}
 
 \subsection{The generation ceiling effect}
-Figure~\ref{fig:budget} sweeps the generation ceiling with every other variable
-held fixed. \nemotronName{} rises from \nemotronLowAcc{} to \nemotronHighAcc{}.
-The comparison models, which emit far less text before answering, are close to
-flat across the same sweep. A single ceiling applied uniformly is therefore not
-neutral: it penalises verbose reasoners specifically, and the size of the
-penalty is a property of the harness rather than of the task.
+Figure~\ref{fig:budget}(a) sweeps the generation ceiling with every other
+variable held fixed. \nemotronName{} rises from \nemotronLowAcc{} to
+\nemotronHighAcc{}. The comparison models, which emit far less text before
+answering, are substantially flatter across the same sweep. A single ceiling
+applied uniformly is therefore not neutral: it penalises verbose reasoners
+specifically, and the size of the penalty is a property of the harness rather
+than of the task.
+
+Figure~\ref{fig:budget}(b) shows the mechanism directly. We record the fraction
+of generations that terminate at the ceiling rather than at a stop token. At the
+\tokenLowBudget{} token ceiling, \nemotronTruncLow{} of \nemotronName{}
+generations are cut off, against \claudeTruncLow{} for \claudeName{}. At
+\tokenHighBudget{} tokens the figure falls to \nemotronTruncHigh{}. The
+accuracy curve in panel (a) is the mirror image of the truncation curve in panel
+(b), which is what distinguishes this from a test time compute effect: the
+model is not reasoning better with more tokens, it is being permitted to finish
+at all.
 
 \begin{figure}[t]
 \centering
@@ -188,10 +202,20 @@ does.}
 
 The practical recommendation is small and cheap. Evaluation reports should state
 the generation ceiling alongside accuracy, and should verify that the ceiling
-binds on no model before comparing any two. A one line check suffices: the
-fraction of generations that terminate at the ceiling rather than at a stop
-token. In our first run that fraction was near one for a model we were about to
-score at \nemotronLowAcc{}.
+binds on no model before comparing any two. A one line check suffices, and we
+report it in Figure~\ref{fig:budget}(b): the fraction of generations that
+terminate at the ceiling rather than at a stop token. A model whose truncation
+rate is materially above zero has not been measured, it has been cut off, and
+its accuracy number carries no information about its planning ability. In our
+own first run that fraction was \nemotronTruncLow{} for a model we were about to
+report at \nemotronLowAcc{}.
+
+The distinction from test time compute scaling \cite{snell2024scaling} matters
+here. That literature asks how accuracy improves when a model is given more room
+to think. We are pointing at something more basic and more embarrassing: below a
+threshold, the harness is not measuring thinking at all, because no answer is
+ever emitted. The two effects are separable precisely by the truncation rate,
+which is why we argue it belongs in evaluation reports as a matter of routine.
 
 The effect interacts badly with two current trends. Models increasingly reason
 in the open, and harnesses increasingly cap output in order to control cost.
