@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db.models.appointment import Appointment
 from app.db.models.outreach import OutreachAttempt
 from app.services.call_service import CallNotConfigured, place_call
 from app.db.session import get_db
@@ -89,8 +90,18 @@ def approve(attempt_id: int, payload: DecisionRequest, db: Session = Depends(get
     # The approval itself always succeeds and is recorded regardless of
     # whether telephony is wired up yet - "approved, call not yet placed" is
     # a normal and honest state, not an error.
+    slot_row = db.get(Appointment, attempt.slot_id)
+    slot = (
+        {
+            "provider": slot_row.provider,
+            "service_type": slot_row.service,
+            "start": slot_row.start_time.strftime("%A %d %B at %I:%M %p"),
+        }
+        if slot_row
+        else None
+    )
     try:
-        place_call(attempt)
+        place_call(attempt, slot)
         attempt.status = "placed"
     except CallNotConfigured as exc:
         logger.info("attempt %s approved but not callable yet: %s", attempt_id, exc)

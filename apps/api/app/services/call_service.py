@@ -22,21 +22,56 @@ logger = logging.getLogger(__name__)
 
 OUTBOUND_CALL_URL = "https://api.elevenlabs.io/v1/convai/twilio/outbound-call"
 
-# The three phone-call tools, from update_call_tool_urls.py - swapped in via
-# per-conversation override so the browser widget's client tools (which
-# cannot run on a phone call) are never touched.
-CALL_TOOL_IDS = [
-    "tool_1301m2yb2arne1ztf3jt0js6n6dj",  # get_available_slots_call
-    "tool_7201m2yb2x9xecpty0e8z17589m1",  # save_scheduling_intent_call
-    "tool_6301m2yb2xj7e1e8z5swnjwapkx0",  # book_appointment_call
-]
+# Phone calls use a SEPARATE agent from the browser widget.
+#
+# The original plan was one agent with a per-conversation tool_ids override,
+# but that does not work: ElevenLabs rejects overrides referencing tools not
+# already attached to the agent ("Tool IDs not attached to this agent"), and
+# the browser SDK's override type has no tool_ids field at all - only prompt
+# and llm. Attaching all six tools to one agent would expose the webhook trio
+# to the browser widget, where they point at a URL ElevenLabs cannot reach
+# during local development.
+#
+# So: ELEVENLABS_AGENT_ID keeps the three client tools for the browser, and
+# ELEVENLABS_PHONE_AGENT_ID carries the three webhook tools for telephony.
+# Same prompt and voice on both; only the tool transport differs.
 
 
 class CallNotConfigured(Exception):
     """Raised when Twilio/ElevenLabs telephony isn't set up yet."""
 
 
-def place_call(attempt) -> dict:
+def _dynamic_variables(attempt, slot: dict | None) -> dict:
+    """Call context the phone agent's prompt interpolates.
+
+    Without these the agent knows it is on a call but not why, and falls back
+    to behaving like an inbound receptionist - asking the patient what they
+    want when we are the ones who called them with news.
+    """
+    brief = attempt.call_brief or {}
+    slot = slot or {}
+    points = brief.get("key_points") or []
+    incentive = attempt.incentive or {}
+    pitch = brief.get("incentive_pitch")
+    return {
+        "patient_id": attempt.patient_id,
+        "slot_id": str(attempt.slot_id),
+        "slot_provider": slot.get("provider", "the clinic"),
+        "slot_service": slot.get("service_type", "an appointment"),
+        "slot_when": slot.get("start", "the opened slot"),
+        "call_key_points": chr(10).join(f"- {p}" for p in points)
+        if points
+        else "- They asked to be told if this slot opened up.",
+        "call_tone": f"- Keep the call {brief.get('tone', 'warm')} in tone.",
+        "incentive_line": (
+            f"You may offer this incentive if they hesitate: {pitch}"
+            if pitch
+            else "No incentive is authorised on this call. Do not offer a discount."
+        ),
+    }
+
+
+def place_call(attempt, slot: dict | None = None) -> dict:
     """attempt: an OutreachAttempt row, already approved.
 
     Raises CallNotConfigured (never a bare exception) if the phone number
@@ -46,7 +81,12 @@ def place_call(attempt) -> dict:
     if not attempt.phone_number:
         raise CallNotConfigured(f"No phone number on file for {attempt.patient_id}")
 
-    agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
+    agent_id = os.environ.get("ELEVENLABS_PHONE_AGENT_ID")
+    if not agent_id:
+        raise CallNotConfigured(
+            "ELEVENLABS_PHONE_AGENT_ID is not set - phone calls need the telephony "
+            "agent (webhook tools), not the browser agent."
+        )
     phone_number_id = os.environ.get("ELEVENLABS_PHONE_NUMBER_ID")
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not phone_number_id:
@@ -61,12 +101,11 @@ def place_call(attempt) -> dict:
         "agent_phone_number_id": phone_number_id,
         "to_number": attempt.phone_number,
         "conversation_initiation_client_data": {
-            "dynamic_variables": {"patient_id": attempt.patient_id},
+            "dynamic_variables": _dynamic_variables(attempt, slot),
             "conversation_config_override": {
-                "agent": {
-                    "prompt": {"tool_ids": CALL_TOOL_IDS},
-                    "first_message": brief.get("opening_line"),
-                }
+                # No tool override: the phone agent already carries exactly the
+                # webhook tools a call needs.
+                "agent": {"first_message": brief.get("opening_line")}
             },
         },
     }
