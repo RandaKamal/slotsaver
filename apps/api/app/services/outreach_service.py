@@ -65,6 +65,7 @@ def evaluate_candidate(
     revenue_at_risk: float,
     incentive_override: dict | None = None,
     business_policy: dict | None = None,
+    allow_self_decided_incentive: bool = True,
 ) -> OutreachAttempt:
     """Runs the full decision pipeline for one candidate and persists the result.
 
@@ -92,7 +93,12 @@ def evaluate_candidate(
         incentive = incentive_override
     else:
         incentive = None
-        if match_score < business_policy["incentive_score_threshold"]:  # a near-perfect match doesn't need to be bought
+        # The full-price round must actually be full price. Deciding an
+        # incentive here as well meant the very first candidate was offered a
+        # discount before anyone had declined anything - the plain ask, which
+        # is the cheapest way to fill the slot, never happened, and
+        # recovery_rules.incentive_from_attempt was quietly bypassed.
+        if allow_self_decided_incentive and match_score < business_policy["incentive_score_threshold"]:  # a near-perfect match doesn't need to be bought
             incentive_decision = decide_incentive(
                 open_slot={**open_slot, "hours_until_appointment": round(hours_until, 1)},
                 business_policy=business_policy,

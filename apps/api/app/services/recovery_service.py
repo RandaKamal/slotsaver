@@ -130,6 +130,10 @@ def offer_to_current_candidate(
             candidate.get("match_score", 0.0),
             record.revenue_at_risk or 0.0,
             incentive_override=incentive_override,
+            # Every incentive round reaches this function with an explicit,
+            # policy-checked override. So no override means this IS the
+            # full-price round, and it must not invent a discount of its own.
+            allow_self_decided_incentive=False,
         )
         attempt = maybe_auto_call(db, attempt, candidate=candidate)
     except Exception:
