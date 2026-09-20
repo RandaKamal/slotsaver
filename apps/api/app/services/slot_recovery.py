@@ -28,8 +28,10 @@ from app.services.appointment_service import cancel_appointment
 from app.services.business_profile_service import get_recovery_rules
 from app.services.outreach_service import evaluate_candidate, maybe_auto_call
 from app.services.recovery_matcher import find_candidates
+from app.db.models.outreach import OutreachAttempt
 from app.services.recovery_service import (
     get_latest_plan_for_slot,
+    offer_to_current_candidate,
     plan_record_to_dict,
     save_recovery_plan,
 )
@@ -218,9 +220,20 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
         return {**plan, "eligible": eligible, "excluded": excluded, "outreach": None}
 
     # Ranking says who COULD take the slot; this decides whether calling the
-    # top match is worth doing and drafts what the agent should say.
-    outreach = evaluate_candidate(db, open_slot, top_candidate, top_score, slot.price)
-    outreach = maybe_auto_call(db, outreach, candidate=top_candidate)
+    # top match is worth doing, drafts what the agent should say, places the
+    # call - and, if the top match turns out to be unreachable, moves past
+    # them to the next one instead of leaving the plan parked on someone who
+    # was never going to be dialed.
+    saved = get_latest_plan_for_slot(db, slot.id)
+    if saved is not None:
+        offer_to_current_candidate(db, saved)
+        db.refresh(saved)
+    outreach = (
+        db.query(OutreachAttempt)
+        .filter_by(slot_id=slot.id)
+        .order_by(OutreachAttempt.created_at.desc(), OutreachAttempt.id.desc())
+        .first()
+    )
 
     return {
         **plan,

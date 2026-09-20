@@ -44,6 +44,12 @@ class OutreachAttempt(Base):
     # pending_approval -> approved | rejected -> (approved only) placed | failed
     # -> (placed only) completed_accepted | completed_declined, set once the
     # call itself has finished and its outcome has been read back.
+    #
+    # "failed" covers every reason the call did not actually start: no phone
+    # number on file, telephony not configured, ElevenLabs refusing or
+    # erroring, or a 200 that came back without a conversation id. All of
+    # them used to be indistinguishable from "still waiting", which is what
+    # let a recovery plan sit on a candidate who was never dialed.
     status: Mapped[str] = mapped_column(String, default="pending_approval", nullable=False)
     decided_by: Mapped[str | None] = mapped_column(String, nullable=True)  # owner identity, once we have one
 
@@ -52,6 +58,12 @@ class OutreachAttempt(Base):
     # call_outcome.py) - without it a finished call is indistinguishable from
     # one still ringing, and the queue can only advance on a blind timeout.
     conversation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Why a call could not be placed, in plain words, for a 'failed' row.
+    # Without this a failure is only ever a line in the server log, and the
+    # dashboard (and anyone debugging a demo) cannot tell a missing phone
+    # number from an ElevenLabs outage.
+    call_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

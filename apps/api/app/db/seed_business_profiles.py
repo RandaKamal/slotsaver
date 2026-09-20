@@ -6,7 +6,10 @@ settings page changes services, worker labels, hours and policy without a
 code change or restart.
 
 Idempotent: only inserts when the table has zero rows, so it never clobbers
-a profile edited through the API.
+a profile edited through the API. Because of that, a key added to these
+dicts later would never reach a database seeded before it existed - see
+backfill_recovery_rules below, which fills in only the keys a stored
+profile is MISSING.
 """
 
 from sqlalchemy import func, select
@@ -45,9 +48,11 @@ _DENTAL = dict(
     },
     recovery_rules={
         "auto_recovery_enabled": True,
+        "auto_call_enabled": True,
         "candidate_timeout_seconds": 25,
         "max_recovery_attempts": 5,
         "incentive_fallback_enabled": True,
+        "incentive_from_attempt": 2,
     },
     incentive_policy={
         "max_discount_percent": 20,
@@ -94,9 +99,11 @@ _TUTORING = dict(
     },
     recovery_rules={
         "auto_recovery_enabled": True,
+        "auto_call_enabled": True,
         "candidate_timeout_seconds": 40,
         "max_recovery_attempts": 3,
         "incentive_fallback_enabled": False,
+        "incentive_from_attempt": 2,
     },
     incentive_policy={
         "max_discount_percent": 15,
@@ -141,9 +148,11 @@ _BARBER = dict(
     },
     recovery_rules={
         "auto_recovery_enabled": True,
+        "auto_call_enabled": True,
         "candidate_timeout_seconds": 15,
         "max_recovery_attempts": 6,
         "incentive_fallback_enabled": True,
+        "incentive_from_attempt": 2,
     },
     incentive_policy={
         "max_discount_percent": 25,
@@ -161,11 +170,50 @@ _BARBER = dict(
 _DEMO_PROFILES = [_DENTAL, _TUTORING, _BARBER]
 
 
+# Keys that must be explicit on every stored profile. A profile seeded
+# before one of these existed would otherwise silently inherit
+# business_profile_service._DEFAULT_RECOVERY_RULES, and the default for
+# auto_call_enabled is False - which is exactly how the demo clinic ended
+# up queueing calls for approval that nobody was ever going to click.
+_REQUIRED_RECOVERY_KEYS = ("auto_call_enabled", "incentive_from_attempt")
+
+
+def backfill_recovery_rules(db: Session) -> list[str]:
+    """Adds missing recovery_rules keys to profiles that predate them.
+
+    Only ever adds a key that is ABSENT. A profile where someone explicitly
+    turned auto_call_enabled off keeps it off - this is for the profiles
+    that never had an opinion, not for overriding one.
+    """
+    changed: list[str] = []
+    for profile in db.execute(select(BusinessProfile)).scalars():
+        rules = dict(profile.recovery_rules or {})
+        defaults = next(
+            (p["recovery_rules"] for p in _DEMO_PROFILES if p["slug"] == profile.slug),
+            _DENTAL["recovery_rules"],
+        )
+        missing = [k for k in _REQUIRED_RECOVERY_KEYS if k not in rules]
+        if not missing:
+            continue
+        for key in missing:
+            rules[key] = defaults[key]
+        # Reassigned wholesale, not mutated in place: SQLAlchemy does not
+        # track mutation inside a plain JSON column, so an in-place update
+        # here would never be written.
+        profile.recovery_rules = rules
+        changed.append(f"{profile.slug}.recovery_rules({', '.join(missing)})")
+    if changed:
+        db.commit()
+    return changed
+
+
 def seed_business_profiles(db: Session) -> list[str]:
     """Inserts the demo profiles if the table is empty. Returns the slugs
     inserted, for the same startup log line pattern as db/migrate.py."""
     existing = db.execute(select(func.count()).select_from(BusinessProfile)).scalar_one()
     if existing:
+        for change in backfill_recovery_rules(db):
+            print(f"[db] backfilled {change}")
         return []
 
     for data in _DEMO_PROFILES:

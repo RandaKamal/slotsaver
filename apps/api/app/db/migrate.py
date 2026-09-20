@@ -80,6 +80,7 @@ _ADDITIVE: dict[str, dict[str, _Column]] = {
     },
     "outreach_attempts": {
         "conversation_id": _Column("VARCHAR"),
+        "call_error": _Column("TEXT"),
     },
 }
 

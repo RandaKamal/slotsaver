@@ -176,15 +176,31 @@ def place_call_for_attempt(db: Session, attempt: OutreachAttempt) -> OutreachAtt
     )
     try:
         response = place_call(attempt, slot, build_patient_brief(db, attempt.patient_id))
-        attempt.status = "placed"
         # Kept so the call's outcome can be read back when it ends, instead of
         # the queue having to advance on a blind timeout - see call_outcome.py.
-        attempt.conversation_id = (response or {}).get("conversation_id")
+        conversation_id = (response or {}).get("conversation_id")
+        if conversation_id:
+            attempt.status = "placed"
+            attempt.conversation_id = conversation_id
+        else:
+            # ElevenLabs answers 200 with a null conversation id when the call
+            # never actually started (no credits, for one). Calling that
+            # "placed" strands the attempt: the outcome job only reads rows
+            # that have a conversation id, so nothing would ever resolve it.
+            attempt.status = "failed"
+            attempt.call_error = (
+                "ElevenLabs accepted the request but returned no conversation id - "
+                "the call never started"
+            )
+            logger.error("attempt %s: no conversation id returned; call did not start", attempt.id)
     except CallNotConfigured as exc:
-        logger.info("attempt %s approved but not callable yet: %s", attempt.id, exc)
-    except Exception:
+        logger.info("attempt %s is not callable: %s", attempt.id, exc)
+        attempt.status = "failed"
+        attempt.call_error = str(exc)
+    except Exception as exc:
         logger.exception("call placement failed for attempt %s", attempt.id)
         attempt.status = "failed"
+        attempt.call_error = f"{type(exc).__name__}: {exc}"
     db.commit()
     db.refresh(attempt)
     return attempt

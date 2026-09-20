@@ -97,6 +97,55 @@ def get_recovery_plan_from_db(db: Session, plan_id: str) -> dict | None:
     return plan_record_to_dict(record)
 
 
+def offer_to_current_candidate(
+    db: Session, record: RecoveryPlanRecord, incentive_override: dict | None = None
+) -> None:
+    """Make the offer to whoever the plan is currently on: build their
+    outreach, place the call if auto-calling is on, and if they simply
+    cannot be reached, move straight past them.
+
+    That last part is the point. A candidate with no phone number, or whose
+    call ElevenLabs refused, used to leave the plan sitting on them until
+    the offer timed out minutes later - the queue looked alive while nobody
+    was being called and nothing was going to happen. Being uncallable is
+    known immediately, so it advances immediately, and the skip recurses
+    until someone is reachable or the queue is genuinely spent.
+    """
+    ranked = record.ranked_candidate_ids or []
+    idx = record.current_candidate_index
+    if idx >= len(ranked):
+        return
+    patient_id = ranked[idx]
+    candidate = next(
+        (c for c in (record.candidates or []) if c.get("patient_id") == patient_id), None
+    )
+    if candidate is None:
+        return
+
+    try:
+        attempt = evaluate_candidate(
+            db,
+            record.open_slot,
+            candidate,
+            candidate.get("match_score", 0.0),
+            record.revenue_at_risk or 0.0,
+            incentive_override=incentive_override,
+        )
+        attempt = maybe_auto_call(db, attempt, candidate=candidate)
+    except Exception:
+        logger.exception("could not make an offer to %s on plan %s", patient_id, record.plan_id)
+        return
+
+    if attempt.should_call and attempt.status != "failed":
+        return  # dialed, or waiting in the manual approval queue
+
+    logger.info(
+        "skipping %s on plan %s: %s",
+        patient_id, record.plan_id, attempt.call_error or "not worth calling",
+    )
+    record_candidate_response(db, record.plan_id, "skipped")
+
+
 def _cheapest_compliant_incentive(business_policy: dict, record: RecoveryPlanRecord) -> dict | None:
     """The least generous incentive in the approved list that still passes the
     policy gate, or None if nothing in the list does.
@@ -219,6 +268,11 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
     - "declined" / "timeout": marks the current candidate's offer
       (declined/expired) and moves to the next ranked candidate, marking
       them "offered". No ranked candidates left -> plan becomes "exhausted".
+    - "skipped": the same advance, for a candidate who was never reachable
+      at all (no phone number, telephony refused the call, or Nemotron
+      judged the call not worth placing). Distinct from "declined" because
+      nobody actually told us no - and it happens immediately rather than
+      after an offer window nobody was ever going to answer.
     """
     record = db.query(RecoveryPlanRecord).filter_by(plan_id=plan_id).first()
     if record is None:
@@ -259,63 +313,47 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
         cascade_after_move(db, current_patient_id, record.slot_id)
         return plan_record_to_dict(record)
 
-    elif response in ("declined", "timeout"):
-        statuses[current_patient_id] = "declined" if response == "declined" else "expired"
-        record.current_candidate_index = idx + 1
-        if record.current_candidate_index >= len(ranked):
+    elif response in ("declined", "timeout", "skipped"):
+        statuses[current_patient_id] = {
+            "declined": "declined", "timeout": "expired", "skipped": "skipped",
+        }[response]
+        if idx + 1 >= len(ranked):
+            # Stay on the last candidate rather than pointing one past the
+            # end. "exhausted" already says the queue is spent, and an index
+            # outside the list is just a foot-gun for anything that reads
+            # ranked[current_candidate_index] to show who we are on.
             record.status = "exhausted"
             record.current_offer_at = None
             record.candidate_statuses = statuses
         else:
+            record.current_candidate_index = idx + 1
             next_patient_id = ranked[record.current_candidate_index]
             # Unconditional, not setdefault: a candidate re-offered during the
             # incentive round may already have "declined"/"expired" from the
             # earlier full-price round. Being offered again must overwrite
-            # that stale status, not be suppressed by it (matches
-            # apply_incentive_decision's own first-offer assignment below).
+            # that stale status, not be suppressed by it.
             statuses[next_patient_id] = "offered"
             record.current_offer_at = _utcnow()
             record.candidate_statuses = statuses
             db.commit()
             db.refresh(record)
 
-            # First pass, next candidate: same automatic-call pipeline the
-            # very first offer used (see slot_recovery.run_recovery) - every
-            # candidate in the ranked list gets an actual call in turn, not
-            # just bookkeeping on this row, if the business has opted into
-            # auto_call_enabled.
-            next_candidate = next(
-                (c for c in (record.candidates or []) if c.get("patient_id") == next_patient_id), None
-            )
-            if next_candidate is not None:
+            # Attempt number is 1-based: the person we just moved to is
+            # attempt current_candidate_index + 1. From incentive_from_attempt
+            # onward the offer may carry a discount, so "first person said no"
+            # leads to a sweetened second call, not the same pitch again.
+            # A skip does not earn anyone a discount - nobody refused
+            # anything, so the offer stays at the price it was.
+            incentive_override = None
+            if response != "skipped":
                 try:
-                    # Attempt number is 1-based: the person we just moved to
-                    # is attempt current_candidate_index + 1. From
-                    # incentive_from_attempt onward the offer is allowed to
-                    # carry a discount, so "first person said no" leads to a
-                    # sweetened second call instead of the same pitch again.
                     incentive_override = _authorized_incentive(
                         db, record, attempt_number=record.current_candidate_index + 1
                     )
-                    outreach = evaluate_candidate(
-                        db,
-                        record.open_slot,
-                        next_candidate,
-                        next_candidate.get("match_score", 0.0),
-                        record.revenue_at_risk or 0.0,
-                        incentive_override=incentive_override,
-                    )
-                    maybe_auto_call(db, outreach, candidate=next_candidate)
                 except Exception:
-                    # The offer advance itself already succeeded and is
-                    # committed above - only the next candidate's outreach/
-                    # call attempt failed, same "don't lose a real event over
-                    # a downstream step" rule slot_recovery applies to ranking
-                    # failures. Logged, not raised.
-                    logger.exception(
-                        "outreach/auto-call failed for next candidate %s on plan %s",
-                        next_patient_id, record.plan_id,
-                    )
+                    logger.exception("incentive check failed for plan %s", record.plan_id)
+            offer_to_current_candidate(db, record, incentive_override=incentive_override)
+            db.refresh(record)
             return plan_record_to_dict(record)
 
     else:

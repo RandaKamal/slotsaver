@@ -255,9 +255,13 @@ export function AppointmentCalendar() {
       setNotice(`${appointment.patient}’s appointment is cancelled — live recovery is starting below.`);
       closeEditor();
 
+      // Kicks recovery off directly rather than waiting on the autonomous
+      // scheduler, which is the only path proven to start it reliably here.
+      // Fired once, and not awaited: the panel below polls for the plan and
+      // shows progress as it arrives.
       recoverFromCancellation(serverId)
         .then((plan) => setRecoveryPlans((current) => ({ ...current, [serverId]: plan })))
-        .catch(() => { /* the scheduler retries this on its own; the panel polls for it */ });
+        .catch(() => { /* the panel keeps polling; the scheduler is the backstop */ });
       return;
     }
 
