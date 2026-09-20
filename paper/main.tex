@@ -324,6 +324,17 @@ it rather than omit it.
 APIs. Vendor side changes are not observable to us, so these results are tied to
 the run date recorded in Section~\ref{sec:repro}.
 
+\textbf{Sample loss correlates with the swept variable.} The provider returned
+429 and 503 at a rate that rose with the ceiling, because a larger ceiling means
+longer generations and therefore more concurrent requests in flight. For
+\nemotronName{} the loss was zero at \tokenLowBudget{} tokens and rose steadily
+with the ceiling, so the higher ceiling cells rest on fewer retained items and
+carry correspondingly wider intervals. We report the retained count for every
+cell rather than only the rate. We do not believe this biases the direction of
+the effect, since a dropped call is a call that produced no output at all and is
+independent of whether that output would have been correct, but it does cost
+precision exactly where we would most like to have it.
+
 \textbf{Scope.} One task from one benchmark. We do not claim the ceiling effect
 generalises to tasks that do not elicit extended reasoning, although the
 mechanism that produces it is not task specific.
