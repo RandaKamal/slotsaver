@@ -13,7 +13,13 @@ NEMOTRON_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
 nim_client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
-    api_key=os.environ["NVIDIA_API_KEY"],
+    # A missing key should fail the NIM call that needs it (caught in
+    # preference_service's background task) at request time, not crash the
+    # whole app at import time for every route, including ones that never
+    # touch Nemotron. The OpenAI client itself rejects a falsy api_key even
+    # at construction, so an empty env var needs a non-empty placeholder -
+    # the real 401 still happens the first time a call is actually made.
+    api_key=os.environ.get("NVIDIA_API_KEY") or "missing-nvidia-api-key",
     timeout=60.0,
     max_retries=1,
 )
