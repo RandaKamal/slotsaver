@@ -36,6 +36,10 @@ def _serialize(a: OutreachAttempt) -> dict:
         "incentive": a.incentive,
         "call_brief": a.call_brief,
         "status": a.status,
+        # Exposed so it is possible to tell from outside whether a placed call
+        # can have its outcome read back at all - a null here means the queue
+        # has nothing to advance on but the timeout.
+        "conversation_id": a.conversation_id,
         "created_at": a.created_at.isoformat() if a.created_at else None,
         "decided_at": a.decided_at.isoformat() if a.decided_at else None,
     }

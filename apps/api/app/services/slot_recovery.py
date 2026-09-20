@@ -89,6 +89,17 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     endpoint that is already rate-limiting us.
     """
     existing = get_latest_plan_for_slot(db, slot.id)
+
+    # A plan with a live offer out is being handled right now, full stop. The
+    # timestamp comparison below is the general rule, but it depends on two
+    # columns with different timezone handling agreeing, and when it got that
+    # wrong the autonomous scheduler re-ranked the same slot on every tick -
+    # burning the whole tick on Nemotron calls, so the jobs after it (reading
+    # call outcomes, expiring offers) never ran at all. Re-ranking underneath
+    # someone who is mid-offer is never right, whatever the clocks say.
+    if existing is not None and existing.status == "pending":
+        return {**plan_record_to_dict(existing), "eligible": [], "excluded": [], "outreach": None}
+
     if existing is not None and (
         slot.cancelled_at is None or _as_utc(existing.created_at) >= _as_utc(slot.cancelled_at)
     ):

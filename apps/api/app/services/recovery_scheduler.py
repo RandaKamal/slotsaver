@@ -172,11 +172,19 @@ def tick() -> None:
         rules = get_recovery_rules(db)
         if not rules["auto_recovery_enabled"]:
             return
-        _plan_new_cancellations(db)
+        # Order matters, and it is the cheap jobs first on purpose. Planning a
+        # new cancellation is the only slow one (ranking plus the outreach
+        # decisions - several model calls), and when it ran first a slow or
+        # stuck pipeline meant nothing after it executed: a placed call's
+        # outcome was never read and offers never expired, so the queue froze
+        # on candidate one. Reading outcomes and expiring offers are a couple
+        # of DB queries and one short HTTP call, so they run every tick
+        # regardless of what planning is doing.
         _resolve_finished_calls(db)
         _advance_timed_out_offers(db, rules["candidate_timeout_seconds"])
         if rules["incentive_fallback_enabled"]:
             _apply_incentive_where_exhausted(db)
+        _plan_new_cancellations(db)
     except Exception:
         logger.exception("recovery scheduler tick failed")
     finally:
