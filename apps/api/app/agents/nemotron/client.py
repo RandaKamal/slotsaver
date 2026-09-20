@@ -19,13 +19,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# The fast model leads. A cancellation needs three or four sequential calls
-# (rank, incentive, is-this-call-worth-making, write the brief) before it can
-# dial, so per-call latency is multiplied by four before a phone ever rings -
-# on the 120B that was tens of seconds, and it is also the model NVIDIA has
-# been rate-limiting. The 30B answers the same prompts far faster and on its
-# own quota; the larger model stays in the chain below as the fallback.
-NEMOTRON_MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
+NEMOTRON_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 
 # NVIDIA rate-limits per MODEL, not per account: the 120B saturating does not
 # mean the key is out of budget - a smaller Nemotron on its own bucket still
@@ -37,7 +31,14 @@ NEMOTRON_MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
 # Deliberately NOT applied to call_nim/call_nim_json: the benchmark harness
 # and baselines.py compare NAMED models, and quietly answering as a different
 # one would corrupt exactly what they measure.
-NEMOTRON_FALLBACK_MODELS = ("nvidia/nemotron-3-super-120b-a12b",)
+# Measured, not assumed: the 30B is a reasoning model that ignores the
+# "detailed thinking off" toggle, so on these prompts it spends its budget
+# narrating and returns JSON of the wrong shape (no ranked_candidate_ids),
+# which then burns the retry budget - 117s for one ranking against ~10s on
+# the 120B. It stays as the fallback, where a wrong-shaped answer is still
+# better than a rate-limited slot with no ranking at all, but it must not
+# lead.
+NEMOTRON_FALLBACK_MODELS = ("nvidia/nemotron-3.5-lightning-30b-a3b",)
 
 nim_client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
@@ -149,11 +150,24 @@ def call_nemotron(system_prompt: str, user_prompt: str, temperature: float = 0.5
 
 def call_nemotron_json(system_prompt: str, user_prompt: str, retries: int = 2) -> dict:
     last_error: Exception | None = None
-    for model in _nemotron_chain():
+    for index, model in enumerate(_nemotron_chain()):
+        # Only the primary gets the full retry budget. The fallback is slower
+        # and likelier to answer in the wrong shape, so retrying it three
+        # times turned a rate-limited ranking into a two-minute stall with
+        # nothing to show - one attempt caps that, and a failure here still
+        # degrades to "eligible but unranked" rather than hanging the caller.
+        model_retries = retries if index == 0 else 0
         try:
-            return call_nim_json(model, system_prompt, user_prompt, retries)
+            return call_nim_json(model, system_prompt, user_prompt, model_retries)
         except _MODEL_UNAVAILABLE as exc:
             logger.warning("nemotron model %s unavailable (%s) - trying next in chain", model, type(exc).__name__)
+            last_error = exc
+        except ValueError as exc:
+            # Wrong-shaped JSON from a fallback is worth abandoning for the
+            # next model; from the last one it is the real failure.
+            if index == len(_nemotron_chain()) - 1:
+                raise
+            logger.warning("nemotron model %s returned unusable JSON - trying next in chain", model)
             last_error = exc
     raise last_error  # type: ignore[misc]
 
