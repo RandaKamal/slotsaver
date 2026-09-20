@@ -2,10 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from sqlalchemy import select
+
 from app.agents.mock_store import PATIENTS, RECOVERY_PLANS, new_plan_id
 from app.agents.nemotron.ranker import rank_candidates
 from app.core.business_policy import get_business_policy
 from app.db.models.appointment import Appointment
+from app.db.models.outreach import OutreachAttempt
 from app.db.session import get_db
 from app.services.appointment_service import cancel_appointment
 from app.services.recovery_service import (
@@ -64,7 +67,31 @@ def get_recovery_plan_for_slot(slot_id: int, db: Session = Depends(get_db)) -> d
     record = get_latest_plan_for_slot(db, slot_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"No recovery plan for slot {slot_id}")
-    return plan_record_to_dict(record)
+    plan = plan_record_to_dict(record)
+
+    # The initial from-cancellation response carries the outreach decision
+    # inline, but a poll that discovers a plan it didn't itself trigger (the
+    # autonomous scheduler, a live phone cancellation) needs it looked up
+    # here too - this is what lets the calendar's "call now" button work
+    # regardless of which of those three paths started this recovery.
+    outreach = db.execute(
+        select(OutreachAttempt)
+        .where(OutreachAttempt.slot_id == slot_id)
+        .order_by(OutreachAttempt.created_at.desc())
+    ).scalars().first()
+    plan["outreach"] = (
+        {
+            "id": outreach.id,
+            "should_call": outreach.should_call,
+            "reason": outreach.decision_reason,
+            "incentive": outreach.incentive,
+            "call_brief": outreach.call_brief,
+            "status": outreach.status,
+        }
+        if outreach
+        else None
+    )
+    return plan
 
 
 @router.get("/{plan_id}")

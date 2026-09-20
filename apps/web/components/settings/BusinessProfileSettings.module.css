@@ -1,16 +1,16 @@
-.page { padding: 40px 44px; max-width: 980px; margin: 0 auto; }
-.header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
-.header h1 { font-size: clamp(24px, 2.4vw, 32px); font-weight: 600; letter-spacing: -1px; margin: 10px 0; }
-.subtitle { color: var(--muted); font-size: 14px; margin: 0 0 28px; }
+.page { padding: 22px 28px; max-width: 980px; margin: 0 auto; }
+.header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+.header h1 { font-size: clamp(19px, 1.8vw, 24px); font-weight: 600; letter-spacing: -0.6px; margin: 4px 0; }
+.subtitle { color: var(--muted); font-size: 12.5px; margin: 0 0 16px; }
 
-.switcher { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 32px; padding: 14px 16px; background: white; border: 1px solid var(--border); border-radius: 12px; }
-.switcher span { font-size: 12px; color: var(--muted); font-weight: 600; }
-.profileChip { border: 1px solid var(--border); background: #f8fafc; color: var(--navy); border-radius: 999px; padding: 7px 14px; font-size: 12px; cursor: pointer; }
+.switcher { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; padding: 10px 14px; background: white; border: 1px solid var(--border); border-radius: 10px; }
+.switcher span { font-size: 11px; color: var(--muted); font-weight: 600; }
+.profileChip { border: 1px solid var(--border); background: #f8fafc; color: var(--navy); border-radius: 999px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .profileChip.active { background: var(--blue); border-color: #1f61d1; color: white; font-weight: 600; }
 
-.section { background: white; border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; margin-bottom: 20px; }
-.section h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
-.sectionHint { font-size: 12px; color: var(--muted); margin: 0 0 16px; }
+.section { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+.section h2 { font-size: 14px; font-weight: 600; margin: 0 0 3px; }
+.sectionHint { font-size: 11.5px; color: var(--muted); margin: 0 0 12px; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: #46586e; }

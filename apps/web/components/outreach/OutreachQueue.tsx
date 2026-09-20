@@ -81,7 +81,7 @@ export function OutreachQueue() {
             {outcome ? (
               <p className={`${styles.done} ${styles[outcome]}`}>
                 {outcome === "approved"
-                  ? "Approved — call placement is not wired up yet."
+                  ? "Approved — placing the real outbound call now."
                   : "Skipped. No call will be placed."}
               </p>
             ) : (

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { fetchAppointments, fetchMetrics, fetchRecoveryPlanBySlot, type ApiAppointment, type DashboardMetrics, type RecoveryPlan } from "@/lib/api";
+import { cancelAppointment, fetchAppointments, fetchMetrics, fetchRecoveryPlanBySlot, recoverFromCancellation, type ApiAppointment, type DashboardMetrics, type RecoveryPlan } from "@/lib/api";
 import { useBusinessProfile } from "@/lib/useBusinessProfile";
 import { RecoveryPanel } from "@/components/recovery/RecoveryPanel";
 import { addDays, dateLabel, DEFAULT_CLOSE_HOUR, DEFAULT_OPEN_HOUR, minutes, providers, sampleAppointments, timeLabel, validAppointment, visitTypes, weekStart, type Appointment } from "./appointment-data";
@@ -121,6 +121,7 @@ export function AppointmentCalendar() {
   const [usingSample, setUsingSample] = useState(false);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [recoveryPlans, setRecoveryPlans] = useState<Record<number, RecoveryPlan | null>>({});
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     // Independent of the appointments poll below - the metrics row and AI
@@ -205,9 +206,10 @@ export function AppointmentCalendar() {
     dialog.current?.close();
     setDraft(null);
   }
-  function save(event: FormEvent<HTMLFormElement>) {
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft) return;
+    const isCancel = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "cancel-appointment";
     const data = new FormData(event.currentTarget);
     const appointment: Appointment = {
       id: draft.id || crypto.randomUUID(),
@@ -217,14 +219,38 @@ export function AppointmentCalendar() {
       date: String(data.get("date")),
       time: String(data.get("time")),
       duration: Number(data.get("duration")),
-      status: (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "cancel-appointment"
-        ? "cancelled"
-        : String(data.get("status")) as Appointment["status"],
+      status: isCancel ? "cancelled" : String(data.get("status")) as Appointment["status"],
     };
     if (!validAppointment(appointment, providerOptions, serviceOptions, openHour, closeHour)) {
       setError(`Add a ${customerLabel.toLowerCase()} name and a valid appointment between ${timeLabel(`${openHour}:00`)} and ${timeLabel(`${closeHour}:00`)}. Visits must last 15–180 minutes.`);
       return;
     }
+
+    const serverId = serverIdOf(draft);
+    if (isCancel && serverId !== undefined) {
+      // Real cancellation, not a local-preview edit: cancels the actual DB
+      // row, then runs the SAME ranking+incentive pipeline the autonomous
+      // scheduler would (deterministic eligibility, Nemotron ranking, the
+      // incentive gate) so the recovery panel has a live plan to show the
+      // instant it opens, rather than waiting on the next scheduler tick.
+      setCancelling(true);
+      setError("");
+      try {
+        await cancelAppointment(serverId);
+        const plan = await recoverFromCancellation(serverId);
+        setRecoveryPlans((current) => ({ ...current, [serverId]: plan }));
+        setEvents((current) => current.map((item) => item.id === draft.id ? { ...appointment, id: draft.id } : item));
+        setRecoveryId(draft.id);
+        setNotice(`${appointment.patient}’s appointment is cancelled — live recovery started below.`);
+        closeEditor();
+      } catch {
+        setError("Could not reach the server to cancel this appointment. Try again.");
+      } finally {
+        setCancelling(false);
+      }
+      return;
+    }
+
     setEvents((current) => draft.id ? current.map((item) => item.id === draft.id ? appointment : item) : [...current, appointment]);
     setWeek(weekStart(appointment.date));
     setProvider("all");
@@ -351,13 +377,15 @@ export function AppointmentCalendar() {
       <dialog ref={dialog} className={styles.dialog} aria-labelledby="appointment-title" onClose={() => setDraft(null)}>
         {draft && <form onSubmit={save} key={draft.id || `${draft.date}-${draft.time}`}>
           <div className={styles.modalHeader}><div><p className="eyebrow">YOUR SCHEDULE</p><h2 id="appointment-title">{draft.id ? "Edit appointment" : "New appointment"}</h2></div><button type="button" className={styles.arrow} aria-label="Close appointment editor" onClick={closeEditor}>×</button></div>
-          <p className={styles.modalNote}>Sample data only. This won’t book or contact a {customerLabel.toLowerCase()}.</p>
+          <p className={styles.modalNote}>{serverIdOf(draft) !== undefined
+            ? `This is a real appointment. Cancelling it starts live recovery — Nemotron ranks real ${customerLabel.toLowerCase()}s and may place a real outbound call.`
+            : `Sample data only. This won’t book or contact a ${customerLabel.toLowerCase()}.`}</p>
           <label className={styles.field}>{customerLabel} name<input name="patient" defaultValue={draft.patient} required maxLength={100} placeholder="e.g. Alex Morgan" autoFocus /></label>
           <div className={styles.fields}><label className={styles.field}>{workerLabel}<select aria-label={workerLabel} name="provider" defaultValue={draft.provider}>{providerOptions.map((name) => <option key={name}>{name}</option>)}</select></label><label className={styles.field}>Service<select aria-label="Service" name="visitType" defaultValue={draft.visitType}>{serviceOptions.map((name) => <option key={name}>{name}</option>)}</select></label></div>
           <div className={styles.fields}><label className={styles.field}>Date<input type="date" name="date" defaultValue={draft.date} required /></label><label className={styles.field}>Start time<input type="time" name="time" min={`${String(openHour).padStart(2, "0")}:00`} max={`${String(closeHour - 1).padStart(2, "0")}:45`} defaultValue={draft.time} required /></label></div>
           <div className={styles.fields}><label className={styles.field}>Duration (minutes)<input name="duration" type="number" min="15" max="180" step="1" defaultValue={draft.duration} required /></label><label className={styles.field}>Status<select aria-label="Status" name="status" defaultValue={draft.status}><option value="booked">Booked</option><option value="cancelled">Cancelled</option></select></label></div>
           {error && <p className={styles.error} role="alert">{error}</p>}
-          {confirmDelete ? <div key="delete-confirmation" className={styles.deleteConfirmation}><p>Delete this appointment from the preview?</p><button type="button" className={styles.danger} onClick={remove}>Confirm delete</button><button type="button" className={styles.secondary} onClick={(event) => { event.preventDefault(); setConfirmDelete(false); }}>Keep appointment</button></div> : <div key="editor-actions" className={styles.modalActions}>{draft.id && <button type="button" className={styles.delete} onClick={() => setConfirmDelete(true)}>Delete appointment</button>}<button type="button" className={styles.secondary} onClick={closeEditor}>Cancel</button>{draft.id && draft.status === "booked" && <button type="submit" name="intent" value="cancel-appointment" className={styles.secondary}>Cancel appointment</button>}<button type="submit" className={styles.primary}>Save appointment</button></div>}
+          {confirmDelete ? <div key="delete-confirmation" className={styles.deleteConfirmation}><p>Delete this appointment from the preview?</p><button type="button" className={styles.danger} onClick={remove}>Confirm delete</button><button type="button" className={styles.secondary} onClick={(event) => { event.preventDefault(); setConfirmDelete(false); }}>Keep appointment</button></div> : <div key="editor-actions" className={styles.modalActions}>{draft.id && <button type="button" className={styles.delete} onClick={() => setConfirmDelete(true)}>Delete appointment</button>}<button type="button" className={styles.secondary} onClick={closeEditor}>Cancel</button>{draft.id && draft.status === "booked" && <button type="submit" name="intent" value="cancel-appointment" className={styles.secondary} disabled={cancelling}>{cancelling ? "Cancelling…" : "Cancel appointment"}</button>}<button type="submit" className={styles.primary} disabled={cancelling}>Save appointment</button></div>}
         </form>}
       </dialog>
       <dialog ref={importDialog} className={styles.dialog} aria-labelledby="import-title">

@@ -45,7 +45,7 @@ export default async function HomePage() {
         <main id="main-content" className="dashboard">
           <header className="dashboard-header"><p className="eyebrow">A LITTLE MORE ROOM FOR CARE</p><h1>Welcome to SlotSaver.</h1><p>Let&apos;s fill some empty slots.</p></header>
           <MascotCard mascotSrc={mascotSrc} happySrc={happySrc} />
-          <section className="summary" aria-labelledby="summary-heading"><div className="section-heading"><h2 id="summary-heading">Your clinic at a glance</h2><span>{live ? "Live from your clinic" : "Sample data"}</span></div><div className="metric-grid">{cards.map((metric) => <MetricCard key={metric.label} {...metric} />)}</div></section>
+          <section className="summary" aria-labelledby="summary-heading"><div className="section-heading"><h2 id="summary-heading">Your business at a glance</h2><span>{live ? "Live data" : "Sample data"}</span></div><div className="metric-grid">{cards.map((metric) => <MetricCard key={metric.label} {...metric} />)}</div></section>
           <section className="summary" aria-labelledby="outreach-heading">
             <div className="section-heading">
               <h2 id="outreach-heading">Pending outbound calls</h2>
@@ -53,7 +53,7 @@ export default async function HomePage() {
             </div>
             <OutreachQueue />
           </section>
-          <p className="dashboard-footer">Fewer empty slots. Shorter wait times. More room for care.</p>
+          <p className="dashboard-footer">Fewer empty slots. Shorter wait times. Nemotron finds who fills them.</p>
         </main>
       </div>
     </div>

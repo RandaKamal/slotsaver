@@ -4,14 +4,17 @@ import Link from "next/link";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { useBusinessProfile } from "@/lib/useBusinessProfile";
 
+// Cancellations and recovery are one live flow, not separate pages - they
+// both happen inside Appointments (cancel a booking there and the recovery
+// panel opens on the same screen), so a separate disabled "coming soon" nav
+// item for each was clutter that led nowhere. One real nav item beats two
+// dead ones.
 function navigation(customerLabel: string): { label: string; icon: IconName }[] {
   return [
     { label: "Dashboard", icon: "dashboard" },
     { label: "Appointments", icon: "calendar" },
     { label: "Voice agent", icon: "patients" },
     { label: `${customerLabel}s`, icon: "patients" },
-    { label: "Cancellations", icon: "cancellations" },
-    { label: "Recovery", icon: "recovery" },
     { label: "Settings", icon: "settings" },
   ];
 }

@@ -44,6 +44,12 @@ export function fetchAppointments(signal?: AbortSignal): Promise<ApiAppointment[
   return getJson<ApiAppointment[]>("/api/appointments", signal);
 }
 
+export async function cancelAppointment(id: number): Promise<ApiAppointment> {
+  const res = await fetch(`${API_URL}/api/appointments/${id}/cancel`, { method: "POST" });
+  if (!res.ok) throw new Error(`POST /api/appointments/${id}/cancel -> ${res.status}`);
+  return res.json() as Promise<ApiAppointment>;
+}
+
 // --- POST /api/recovery/from-cancellation ------------------------------------
 
 export interface RecoveryCandidate {
@@ -72,6 +78,14 @@ export interface RecoveryPlan {
   revenue_at_risk?: number;
   message?: string;
   cancelled_by?: string | null;
+  outreach?: {
+    id: number;
+    should_call: boolean;
+    reason: string;
+    incentive: { decision?: string; chosen_incentive?: string | null; reasoning?: string | null } | null;
+    call_brief: { tone: string; opening_line: string; key_points: string[]; incentive_pitch: string | null };
+    status: string;
+  } | null;
 }
 
 export async function recoverFromCancellation(slotId: number): Promise<RecoveryPlan> {

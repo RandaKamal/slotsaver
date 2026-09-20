@@ -78,8 +78,16 @@ def place_call(attempt, slot: dict | None = None, patient_brief: str | None = No
     Raises CallNotConfigured (never a bare exception) if the phone number
     import hasn't happened yet, so the caller can show that plainly instead
     of a stack trace.
+
+    DEMO_CALL_OVERRIDE_NUMBER redirects every outbound call to one fixed
+    number regardless of whose record triggered it. This isn't a hack around
+    real behavior - a Twilio trial account can only dial numbers you've
+    verified, so during the demo every "call the patient" has to reach the
+    one verified number (yours) no matter which seeded patient was matched.
+    Unset in a real deployment with a paid Twilio number.
     """
-    if not attempt.phone_number:
+    to_number = os.environ.get("DEMO_CALL_OVERRIDE_NUMBER") or attempt.phone_number
+    if not to_number:
         raise CallNotConfigured(f"No phone number on file for {attempt.patient_id}")
 
     agent_id = os.environ.get("ELEVENLABS_PHONE_AGENT_ID")
@@ -100,7 +108,7 @@ def place_call(attempt, slot: dict | None = None, patient_brief: str | None = No
     payload = {
         "agent_id": agent_id,
         "agent_phone_number_id": phone_number_id,
-        "to_number": attempt.phone_number,
+        "to_number": to_number,
         "conversation_initiation_client_data": {
             "dynamic_variables": _dynamic_variables(attempt, slot, patient_brief),
             "conversation_config_override": {

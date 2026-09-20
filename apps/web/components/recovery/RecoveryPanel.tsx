@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchRecoveryPlanBySlot, recoverFromCancellation, type RecoveryPlan } from "@/lib/api";
+import { approveOutreach, fetchRecoveryPlanBySlot, recoverFromCancellation, type RecoveryPlan } from "@/lib/api";
 import { dateLabel, timeLabel, type Appointment } from "@/components/appointments/appointment-data";
 import { Icon } from "@/components/ui/Icon";
 import { sampleCandidates } from "./mock-data";
@@ -33,6 +33,7 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
   const [loading, setLoading] = useState(slotId !== undefined);
   const [failed, setFailed] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [callState, setCallState] = useState<"idle" | "calling" | "placed" | "not_configured" | "failed">("idle");
 
   useEffect(() => { dialog.current?.showModal(); }, []);
 
@@ -64,6 +65,23 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
       setFailed(true);
     } finally {
       setTriggering(false);
+    }
+  }
+
+  async function callNow(outreachId: number) {
+    setCallState("calling");
+    try {
+      const attempt = await approveOutreach(outreachId);
+      // "approved" (not "placed") means the approval was recorded but
+      // ElevenLabs/Twilio env vars aren't set yet - a config gap, not a
+      // failed call attempt. See call_service.CallNotConfigured.
+      setCallState(
+        attempt.status === "placed" ? "placed"
+          : attempt.status === "approved" ? "not_configured"
+          : "failed",
+      );
+    } catch {
+      setCallState("failed");
     }
   }
 
@@ -135,6 +153,22 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
           ? `Clinic-approved incentive offered: ${plan.selected_incentive.chosen_incentive ?? "discount"}. ${plan.selected_incentive.reasoning ?? ""}`
           : (plan.message ?? "Incentive fallback evaluated.")}
       </p>}
+      {isLive && plan?.outreach?.should_call && <div className={styles.status} role="status">
+        <p><strong>Nemotron recommends calling:</strong> “{plan.outreach.call_brief.opening_line}”</p>
+        {plan.outreach.call_brief.incentive_pitch && <p>Incentive to offer on the call: {plan.outreach.call_brief.incentive_pitch}</p>}
+        {plan.outreach.status !== "pending_approval" || callState !== "idle" ? (
+          <p>
+            {callState === "calling" ? "Placing the call…"
+              : plan.outreach.status === "placed" || callState === "placed" ? "📞 Call placed — this is a real outbound call, not a simulation."
+              : plan.outreach.status === "rejected" ? "Call skipped."
+              : callState === "not_configured" ? "Approved, but ElevenLabs/Twilio aren't configured on this deployment yet — no call was placed."
+              : callState === "failed" ? "Call attempt failed — check ElevenLabs/Twilio configuration and logs."
+              : `Call status: ${plan.outreach.status}`}
+          </p>
+        ) : (
+          <button type="button" className={styles.primary} onClick={() => callNow(plan.outreach!.id)}>📞 Call {candidates[0]?.name ?? "candidate"} now</button>
+        )}
+      </div>}
       {isLive && plan?.status === "filled" && <p className={styles.status} role="status">Slot recovered — booked automatically once a candidate accepted. No owner action was required.</p>}
       {isLive && plan?.status === "no_candidates" && <p className={styles.status} role="status">No stored intent matched this slot — it would go unfilled.</p>}
       {isLive && plan?.status === "ranking_failed" && <p className={styles.status} role="status">{plan.message ?? "Ranking failed."}</p>}
@@ -145,7 +179,7 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
         {ranked.length > 0 && currentIndex < ranked.length && plan?.status === "pending" && <span className={styles.badge}>Currently offered: {ranked[currentIndex]}</span>}
       </footer>
       <p className={styles.integration}>{isLive
-        ? <>Nemotron supplied these rankings live{plan?.revenue_at_risk ? ` · $${plan.revenue_at_risk.toFixed(0)} at risk on this slot` : ""}. ElevenLabs outbound calling isn't wired to this flow yet — the outreach-approval queue is the manual path until then.</>
+        ? <>Nemotron supplied these rankings live{plan?.revenue_at_risk ? ` · $${plan.revenue_at_risk.toFixed(0)} at risk on this slot` : ""}. The call button above places a real ElevenLabs/Twilio outbound call.</>
         : <>Planned integration: Nemotron supplies patient rankings; ElevenLabs handles outreach.</>}</p>
     </dialog>
   );
