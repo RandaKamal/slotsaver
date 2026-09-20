@@ -247,3 +247,4 @@ out/
 *.sqlite3
 
 *.tsbuildinfo
+.DS_Store
