@@ -79,15 +79,17 @@ def load(pattern="results/naturalplan_*.json", include_checkpoint=True):
             r["_shots"] = blob.get("shots")
             recs.append(r)
     # A finished run rewrites everything the checkpoint held, so drop duplicates
-    # on the identity of a single call.
-    seen, unique = set(), []
+    # on the identity of a single call. Where the same call appears twice, keep
+    # the one that reached the model: a supplementary pass exists precisely to
+    # recover items an earlier pass lost to rate limiting, and keeping the
+    # earlier error would throw that recovery away.
+    best = {}
     for r in recs:
         key = (r["model"], r.get("max_tokens"), r["example_id"], r.get("repeat", 0))
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(r)
-    return unique
+        prior = best.get(key)
+        if prior is None or (prior.get("error") and not r.get("error")):
+            best[key] = r
+    return list(best.values())
 
 
 def attempted(rows):
