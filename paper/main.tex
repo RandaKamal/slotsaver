@@ -127,10 +127,22 @@ count. We therefore do not plot accuracy against parameter count, because doing
 so for the other two would require inventing numbers.
 
 \subsection{Experimental controls}
-Every model receives the byte identical prompt taken from the dataset, with no
-per model prompt engineering, so the comparison measures the model rather than
-our prompt writing. Sampling temperature is zero wherever the vendor SDK exposes
-it. Latency is measured around the successful request only, excluding our own
+Every model receives the byte identical user prompt taken from the dataset, with
+no per model prompt engineering, so the comparison measures the model rather
+than our prompt writing. One deliberate asymmetry exists and we state it
+plainly: \nemotronName{} is sent the vendor documented reasoning control
+(\texttt{detailed thinking off}) in a system turn, which the other two models do
+not receive because they have no equivalent. We use it because running a model
+outside its documented configuration is the less defensible choice, but it is
+not a neutral difference and a reader should know it is there.
+
+We note in passing that this control did not do what its name suggests. With
+\texttt{detailed thinking off} set, \nemotronName{} still emitted extended
+derivations, averaging thousands of output tokens per item, which is precisely
+what makes it vulnerable to the ceiling effect. Practitioners relying on that
+toggle to bound output length should verify it empirically rather than trust it.
+
+Sampling temperature is zero wherever the vendor SDK exposes it. Latency is measured around the successful request only, excluding our own
 retry backoff, so that rate limiting imposed by our billing tier is not charged
 to a model's speed. Items are sampled stratified by participant count, because
 the raw distribution is half two participant items and a uniform sample would

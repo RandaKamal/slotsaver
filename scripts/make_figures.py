@@ -35,6 +35,9 @@ LABEL = {
 INK, INK2, GRID = "#0b0b0b", "#52514e", "#d9d8d4"
 # vertical offsets (points) so converging end-labels do not overlap
 LABEL_DY = {"nemotron": 13, "claude": 0, "gemini": -13}
+# larger offsets for the scatter, where labels are two lines tall and the
+# points cluster at similar accuracy
+LABEL_DY_SCATTER = {"nemotron": 0, "claude": 30, "gemini": -30}
 
 plt.rcParams.update({
     "figure.dpi": 200, "savefig.dpi": 200, "savefig.bbox": "tight",
@@ -219,13 +222,20 @@ def fig_efficiency(recs, out="fig3_efficiency.png"):
     budgets = sorted({r["max_tokens"] for r in recs if r["max_tokens"]})
     top = budgets[-1] if budgets else None
     fig, ax = plt.subplots(figsize=(5.4, 3.3))
+    max_tok = 0
     for model, colour in SERIES.items():
-        rows = [r for r in sel(recs, model, top) if not r["error"]]
-        if not rows:
+        all_rows = sel(recs, model, top)
+        ok = [r for r in all_rows if not r["error"]]
+        if not ok:
             continue
-        p, lo, hi, _ = rate(rows)
-        tok = sum(r["output_tokens"] for r in rows) / len(rows)
-        lat = sorted(r["latency_s"] for r in rows)[len(rows) // 2]
+        # Solve rate over EVERY attempted item, matching Table 1. Tokens and
+        # latency are only defined for calls that returned, so those average
+        # over successes. Using different denominators for the two axes of the
+        # same point would put a number here that contradicts the table.
+        p, lo, hi, _ = rate(all_rows)
+        tok = sum(r["output_tokens"] for r in ok) / len(ok)
+        lat = sorted(r["latency_s"] for r in ok)[len(ok) // 2]
+        max_tok = max(max_tok, tok)
         ax.errorbar([tok], [p], yerr=[[p - lo], [hi - p]], color=colour,
                     marker="o", markersize=11, capsize=3, elinewidth=1, linestyle="none")
         ax.annotate(f"{LABEL[model]}\n{p:.0%} at {tok:.0f} tok, {lat:.1f}s",
@@ -234,7 +244,10 @@ def fig_efficiency(recs, out="fig3_efficiency.png"):
     ax.set_xlabel("Mean output tokens per task (proxy for cost)")
     ax.set_ylabel("Solve rate")
     ax.set_title("Accuracy against output spend: up and to the left is better", loc="left")
-    ax.margins(x=0.40, y=0.30)
+    # Token counts cannot be negative, and the right edge needs room for the
+    # longest annotation rather than clipping it.
+    ax.set_xlim(0, max_tok * 1.75 if max_tok else 1)
+    ax.set_ylim(-0.03, 1.12)
     _tidy(ax)
     fig.savefig(FIGDIR / out)
     plt.close(fig)
