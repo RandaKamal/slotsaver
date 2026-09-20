@@ -194,6 +194,10 @@ def fig_difficulty(recs, out="fig2_difficulty.png"):
     top = budgets[-1] if budgets else None
     people = sorted({r["num_people"] for r in recs}, key=int)
     fig, ax = plt.subplots(figsize=(5.4, 3.3))
+    # Series that score identically at a point would draw exactly on top of one
+    # another and the lower ones would vanish. A small horizontal dodge keeps
+    # every series visible without moving any point to a different bucket.
+    dodge = {"nemotron": -0.08, "claude": 0.0, "gemini": 0.08}
     for model, colour in SERIES.items():
         xs, ys, lo_e, hi_e = [], [], [], []
         for p_ in people:
@@ -201,12 +205,14 @@ def fig_difficulty(recs, out="fig2_difficulty.png"):
             if not rows:
                 continue
             v, lo, hi, _ = rate(rows)
-            xs.append(int(p_)); ys.append(v); lo_e.append(v - lo); hi_e.append(hi - v)
+            xs.append(int(p_) + dodge[model])
+            ys.append(v); lo_e.append(v - lo); hi_e.append(hi - v)
         if not xs:
             continue
         ax.errorbar(xs, ys, yerr=[lo_e, hi_e], color=colour, linewidth=2,
                     marker="o", markersize=6, capsize=3, elinewidth=1,
-                    label=LABEL[model])
+                    label=LABEL[model], alpha=0.9)
+    ax.set_xticks([int(p_) for p_ in people])
     ax.set_xlabel("Participants in the meeting (task difficulty)")
     ax.set_ylabel("Solve rate")
     ax.set_ylim(-0.03, 1.03)
