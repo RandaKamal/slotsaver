@@ -1,15 +1,37 @@
+import logging
 import os
 import random
 import time
 
 from dotenv import load_dotenv
-from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    InternalServerError,
+    NotFoundError,
+    OpenAI,
+    RateLimitError,
+)
 
 from app.agents.json_utils import extract_json_object
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 NEMOTRON_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+
+# NVIDIA rate-limits per MODEL, not per account: the 120B saturating does not
+# mean the key is out of budget - a smaller Nemotron on its own bucket still
+# answers. Tried in order when the one before it is rate-limited or has been
+# retired (nemotron-nano-9b-v2 was EOL'd out from under this project
+# mid-build), so a throttle degrades to a smaller model of the same family
+# instead of to no ranking at all.
+#
+# Deliberately NOT applied to call_nim/call_nim_json: the benchmark harness
+# and baselines.py compare NAMED models, and quietly answering as a different
+# one would corrupt exactly what they measure.
+NEMOTRON_FALLBACK_MODELS = ("nvidia/nemotron-3.5-lightning-30b-a3b",)
 
 nim_client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
@@ -97,12 +119,37 @@ def call_nim_json(model: str, system_prompt: str, user_prompt: str, retries: int
     raise ValueError(f"{model} did not return valid JSON after {retries + 1} attempts: {last_error}")
 
 
+# A model being throttled or retired is about that model's availability, not
+# about the request being wrong - those are the two cases worth re-asking a
+# different Nemotron. A 400/401 would fail identically on every model, so it
+# is raised immediately rather than retried down the chain.
+_MODEL_UNAVAILABLE = (RateLimitError, NotFoundError)
+
+
+def _nemotron_chain() -> tuple[str, ...]:
+    return (NEMOTRON_MODEL, *NEMOTRON_FALLBACK_MODELS)
+
+
 def call_nemotron(system_prompt: str, user_prompt: str, temperature: float = 0.5, max_tokens: int = 1024) -> str:
-    return call_nim(NEMOTRON_MODEL, system_prompt, user_prompt, temperature, max_tokens)
+    last_error: Exception | None = None
+    for model in _nemotron_chain():
+        try:
+            return call_nim(model, system_prompt, user_prompt, temperature, max_tokens)
+        except _MODEL_UNAVAILABLE as exc:
+            logger.warning("nemotron model %s unavailable (%s) - trying next in chain", model, type(exc).__name__)
+            last_error = exc
+    raise last_error  # type: ignore[misc]
 
 
 def call_nemotron_json(system_prompt: str, user_prompt: str, retries: int = 2) -> dict:
-    return call_nim_json(NEMOTRON_MODEL, system_prompt, user_prompt, retries)
+    last_error: Exception | None = None
+    for model in _nemotron_chain():
+        try:
+            return call_nim_json(model, system_prompt, user_prompt, retries)
+        except _MODEL_UNAVAILABLE as exc:
+            logger.warning("nemotron model %s unavailable (%s) - trying next in chain", model, type(exc).__name__)
+            last_error = exc
+    raise last_error  # type: ignore[misc]
 
 
 if __name__ == "__main__":
