@@ -143,3 +143,35 @@ Everything buildable without a Twilio account now exists:
    a `PreferenceRecord`, approve its outreach attempt, and see whether
    `place_call()`'s request shape is actually correct — this is the first
    real test of everything in this section.
+
+---
+
+## Testing the phone agent without calling anyone
+
+`simulate-conversation` cannot drive the production phone agent: it refuses the
+request because it will not supply the `patient_id` dynamic variable the
+webhook tools require. So prompt changes are validated against a sandbox agent
+instead, and only pushed to production once they behave.
+
+**Sandbox agent:** `agent_6001m2yfa42nepgaea8pbn3t78zy` ("SlotSaver Sandbox")
+
+It carries the same prompt with the `{{placeholders}}` filled in with
+representative values, and client-tool twins of the five phone tools with the
+same names but no dynamic variables, so `tool_mock_config` can stub their
+responses. Prompt behaviour is identical; only the tool transport differs.
+
+To iterate:
+1. Edit `apps/api/app/agents/prompts/phone_agent.md`
+2. Patch the sandbox agent with the placeholders filled in
+3. Run `simulate-conversation` against the sandbox with `tool_mock_config`
+4. When it behaves, `python scripts/sync_phone_agent.py` to push to production
+
+### Verbosity regression baseline
+
+The real call that prompted this work averaged **35.6 words per agent turn**
+(25/59/52/35/27/17/24/34/35/52), and the patient interrupted with "you are
+going in too long". After the rewrite, the same scenario in the sandbox
+averages **11.2 words**, and a book/cancel scenario averages 12.8.
+
+If a future prompt change pushes the average back above ~20, that is a
+regression worth catching before it reaches a live call.
