@@ -10,7 +10,9 @@ from app.db.session import get_db
 from app.services.appointment_service import cancel_appointment
 from app.services.recovery_service import (
     apply_incentive_decision,
+    get_latest_plan_for_slot,
     get_recovery_plan_from_db,
+    plan_record_to_dict,
     record_candidate_response,
 )
 from app.services.slot_recovery import run_recovery
@@ -47,6 +49,22 @@ def create_recovery_plan(payload: PlanRequest) -> dict:
     }
     RECOVERY_PLANS[plan_id] = plan
     return plan
+
+
+@router.get("/by-slot/{slot_id}")
+def get_recovery_plan_for_slot(slot_id: int, db: Session = Depends(get_db)) -> dict:
+    """The most recent recovery plan for this slot, however it was created -
+    a button click, a live-call cancellation, or the autonomous scheduler.
+
+    This is how the live calendar/status-bar polling discovers a plan it
+    never itself triggered. 404 means no cancellation has been processed for
+    this slot yet (the scheduler ticks every few seconds, so on a freshly
+    cancelled slot this can briefly 404 before a plan exists).
+    """
+    record = get_latest_plan_for_slot(db, slot_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"No recovery plan for slot {slot_id}")
+    return plan_record_to_dict(record)
 
 
 @router.get("/{plan_id}")
@@ -112,26 +130,35 @@ class CancellationRequest(BaseModel):
 def recover_from_cancellation(
     payload: CancellationRequest, db: Session = Depends(get_db)
 ) -> dict:
-    """Frees a booked slot and runs recovery on it, synchronously.
+    """Ensures a slot is free and has a recovery plan, synchronously.
 
-    Cancels the booking (deterministic - see appointment_service.cancel_appointment;
-    rejects a slot that isn't actually booked), selects patients whose STORED
-    INTENT fits it (deterministic, see recovery_matcher), then has Nemotron rank
-    the survivors. Without stored intent this slot simply goes empty - nobody
-    knows who to call. If Nemotron itself is unreachable (e.g. no NVIDIA_API_KEY),
-    everything up to that point already happened and is persisted - only the
-    ranking step is marked failed, never faked.
+    Cancels the booking if it's still booked (deterministic - see
+    appointment_service.cancel_appointment). If it's already available - the
+    normal case now that the autonomous scheduler cancels+plans on its own -
+    this just proceeds to run_recovery, which is itself idempotent: given a
+    slot that already has a plan for its current cancellation, it returns
+    that plan rather than re-ranking. So this button is safe to click at any
+    point in an already-running recovery; it never creates a second plan.
+
+    Selects patients whose STORED INTENT fits the slot (deterministic, see
+    recovery_matcher), then has Nemotron rank the survivors. Without stored
+    intent this slot simply goes empty - nobody knows who to call. If Nemotron
+    itself is unreachable (e.g. no NVIDIA_API_KEY), everything up to that
+    point already happened and is persisted - only the ranking step is
+    marked failed, never faked.
 
     Shares one pipeline with a patient cancelling on a live call
-    (POST /api/voice/cancel); that path runs it in the background because
-    someone is on the phone, this one blocks so the dashboard gets the ranking
-    back to display.
+    (POST /api/voice/cancel) and with the autonomous scheduler; this is the
+    one synchronous entry point, for when the dashboard wants the ranking
+    back immediately instead of polling for it.
     """
     existing = db.get(Appointment, payload.slot_id)
     if existing is None:
         raise HTTPException(status_code=404, detail=f"No such slot: {payload.slot_id}")
-    previous_holder = existing.customer_id
 
-    slot = cancel_appointment(db, payload.slot_id)
+    if existing.status == "booked":
+        slot = cancel_appointment(db, payload.slot_id)
+    else:
+        slot = existing
 
-    return {**run_recovery(db, slot, cancelled_by=previous_holder), "cancelled_by": previous_holder}
+    return {**run_recovery(db, slot, cancelled_by=slot.last_cancelled_by), "cancelled_by": slot.last_cancelled_by}

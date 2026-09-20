@@ -40,8 +40,14 @@ class RecoveryPlanRecord(Base):
     stage: Mapped[str] = mapped_column(String, nullable=False, default="NORMAL")
     selected_incentive: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    # "pending" | "filled" | "exhausted" | "ranking_failed"
+    # "pending" | "filled" | "exhausted" | "ranking_failed" | "no_candidates"
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+
+    # When the *current* candidate was offered - set on creation, on every
+    # decline/timeout advance, and on an incentive restart. The autonomous
+    # scheduler compares this to now() to fire a real timeout; None means
+    # there's no live offer to time out (queue concluded, or nothing ranked).
+    current_offer_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # patient_id -> "offered" | "declined" | "expired" | "accepted". Every
     # candidate who was ever the current offer gets an entry here, so the

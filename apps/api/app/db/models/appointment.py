@@ -28,3 +28,10 @@ class Appointment(Base):
 
     # "available" | "booked" | "cancelled"
     status: Mapped[str] = mapped_column(String, nullable=False, default="available", index=True)
+
+    # Set by cancel_appointment() when it flips booked -> available. Lets the
+    # autonomous scheduler tell "just cancelled, needs recovery" apart from
+    # "was always open" (seed data), and lets a plan remember who it's
+    # recovering the slot from after customer_id is cleared.
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_cancelled_by: Mapped[str | None] = mapped_column(String, nullable=True)

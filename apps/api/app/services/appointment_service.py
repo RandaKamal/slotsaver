@@ -96,7 +96,15 @@ def cancel_appointment(db: Session, appointment_id: int) -> Appointment:
     result = db.execute(
         update(Appointment)
         .where(Appointment.id == appointment_id, Appointment.status == "booked")
-        .values(status="available", customer_id=None)
+        # last_cancelled_by reads the row's own pre-update customer_id in the
+        # same statement (standard SQL SET semantics) - no separate SELECT,
+        # so the atomicity guarantee above is unchanged.
+        .values(
+            status="available",
+            last_cancelled_by=Appointment.customer_id,
+            customer_id=None,
+            cancelled_at=datetime.datetime.now(datetime.timezone.utc),
+        )
     )
     db.commit()
 
@@ -130,7 +138,12 @@ def cancel_slot(db: Session, patient_id: str, slot_id: int) -> Appointment:
             Appointment.status == "booked",
             Appointment.customer_id == patient_id,
         )
-        .values(status="available", customer_id=None)
+        .values(
+            status="available",
+            last_cancelled_by=Appointment.customer_id,
+            customer_id=None,
+            cancelled_at=datetime.datetime.now(datetime.timezone.utc),
+        )
     )
     db.commit()
 

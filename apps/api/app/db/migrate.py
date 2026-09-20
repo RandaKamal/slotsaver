@@ -23,6 +23,11 @@ _ADDITIVE: dict[str, dict[str, str]] = {
     },
     "recovery_plans": {
         "candidate_statuses": "JSON DEFAULT '{}' NOT NULL",
+        "current_offer_at": "DATETIME",
+    },
+    "appointments": {
+        "cancelled_at": "DATETIME",
+        "last_cancelled_by": "VARCHAR",
     },
 }
 
