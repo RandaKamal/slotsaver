@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "apps" / "api"))
-from app.agents.naturalplan.scorer import wilson_interval  # noqa: E402
+from app.agents.naturalplan.scorer import mcnemar, wilson_interval  # noqa: E402
 
 PAPER = _ROOT / "paper"
 FIGDIR = PAPER / "figures"
@@ -292,6 +292,56 @@ def write_latex(recs):
     print(f"  numbers.tex + table_main.tex (ceilings {budgets})")
 
 
+def write_significance(recs, out="table_sig.tex"):
+    """Pairwise McNemar tests at the highest ceiling.
+
+    The models are run on the same items, so the outcomes are paired and a
+    two-sample proportion test would discard that pairing. Reporting only
+    overlapping items keeps the test exact.
+    """
+    budgets = sorted({r["max_tokens"] for r in recs if r["max_tokens"]})
+    if not budgets:
+        return
+    top = budgets[-1]
+    by_model = {}
+    for model in SERIES:
+        by_model[model] = {
+            (r["example_id"], r.get("repeat", 0)): r["solved"]
+            for r in sel(recs, model, top)
+        }
+    bs = chr(92)
+    rows, md = [], ["| Pair | Only A | Only B | Discordant | p (exact McNemar) |",
+                    "|---|---|---|---|---|"]
+    names = [m for m in SERIES if by_model.get(m)]
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            shared = sorted(set(by_model[a]) & set(by_model[b]))
+            if len(shared) < 2:
+                continue
+            res = mcnemar([by_model[a][k] for k in shared],
+                          [by_model[b][k] for k in shared])
+            verdict = "n.s." if res["p_value"] >= 0.05 else f"{res['p_value']:.4f}"
+            rows.append(f"{LABEL[a]} vs {LABEL[b]} & {res['a_only']} & {res['b_only']} & "
+                        f"{res['n_discordant']} & {verdict} " + bs * 2)
+            md.append(f"| {LABEL[a]} vs {LABEL[b]} | {res['a_only']} | {res['b_only']} "
+                      f"| {res['n_discordant']} | {verdict} (n={len(shared)}) |")
+    if not rows:
+        return
+    table = [
+        bs + "begin{table}[t]", bs + "centering", bs + "small",
+        bs + "begin{tabular}{lrrrr}", bs + "toprule",
+        "Comparison & Only A & Only B & Disc. & $p$ " + bs * 2,
+        bs + "midrule", *rows, bs + "bottomrule", bs + "end{tabular}",
+        bs + "caption{Exact McNemar tests on paired per item outcomes at the "
+        + str(top) + " token ceiling. Only items attempted by both models are "
+        "included. `n.s.' denotes $p " + bs + "geq 0.05$.}",
+        bs + "label{tab:sig}", bs + "end{table}",
+    ]
+    (PAPER / out).write_text("\n".join(table) + "\n", encoding="utf-8")
+    (PAPER / "table_sig.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    print("\n" + "\n".join(md))
+
+
 def write_markdown_table(recs, out="table1.md"):
     budgets = sorted({r["max_tokens"] for r in recs if r["max_tokens"]})
     top = budgets[-1] if budgets else None
@@ -321,6 +371,7 @@ def main():
     fig_difficulty(recs)
     fig_efficiency(recs)
     write_latex(recs)
+    write_significance(recs)
     print()
     write_markdown_table(recs)
     print(f"\nfigures -> {FIGDIR}")

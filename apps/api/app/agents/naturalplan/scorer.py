@@ -61,3 +61,34 @@ def wilson_interval(successes: int, n: int, z: float = 1.96) -> tuple[float, flo
     centre = (p + z**2 / (2 * n)) / denom
     margin = z * ((p * (1 - p) / n + z**2 / (4 * n**2)) ** 0.5) / denom
     return max(0.0, centre - margin), min(1.0, centre + margin)
+
+
+def mcnemar(a_correct: list[bool], b_correct: list[bool]) -> dict:
+    """Exact McNemar test on paired per-item outcomes.
+
+    Two models are run on the SAME items, so their scores are paired and a
+    two-sample proportion test is the wrong instrument: it throws away the
+    pairing and overstates the uncertainty. McNemar conditions on the
+    discordant pairs only, which is the information that actually distinguishes
+    the two systems.
+
+    Returns the discordant counts and an exact two-sided binomial p-value, so
+    no normal approximation is involved and small counts stay valid.
+    """
+    if len(a_correct) != len(b_correct):
+        raise ValueError("paired test needs equal-length outcome lists")
+    b = sum(1 for x, y in zip(a_correct, b_correct) if x and not y)  # a wins
+    c = sum(1 for x, y in zip(a_correct, b_correct) if y and not x)  # b wins
+    n = b + c
+    if n == 0:
+        return {"a_only": 0, "b_only": 0, "n_discordant": 0, "p_value": 1.0}
+
+    # Exact two-sided binomial test against p = 0.5, computed directly so the
+    # module keeps no scipy dependency.
+    from math import comb
+
+    total = 2 ** n
+    k = min(b, c)
+    tail = sum(comb(n, i) for i in range(0, k + 1))
+    p = min(1.0, 2.0 * tail / total)
+    return {"a_only": b, "b_only": c, "n_discordant": n, "p_value": p}
