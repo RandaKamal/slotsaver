@@ -97,6 +97,37 @@ def get_recovery_plan_from_db(db: Session, plan_id: str) -> dict | None:
     return plan_record_to_dict(record)
 
 
+def _cheapest_compliant_incentive(business_policy: dict, record: RecoveryPlanRecord) -> dict | None:
+    """The least generous incentive in the approved list that still passes the
+    policy gate, or None if nothing in the list does.
+
+    Least generous on purpose: this runs when the model declined to choose,
+    so it should concede as little as the owner's own policy allows.
+    """
+    price = record.open_slot.get("price", 0)
+    service = record.open_slot.get("service_type", "")
+
+    def concession(incentive: dict) -> float:
+        if incentive.get("type") == "percent_discount":
+            return price * incentive.get("value", 0) / 100
+        return float(incentive.get("value", 0))
+
+    for incentive in sorted(business_policy.get("allowed_incentives", []), key=concession):
+        candidate = {
+            "decision": "offer_incentive",
+            "chosen_incentive": incentive["id"],
+            "reasoning": (
+                f"Offered automatically: business policy authorizes an incentive from this "
+                f"point in the queue onward."
+            ),
+            "rerank_required": False,
+        }
+        compliant, _ = _incentive_within_policy(candidate, business_policy, price, service)
+        if compliant:
+            return candidate
+    return None
+
+
 def _authorized_incentive(db: Session, record: RecoveryPlanRecord, attempt_number: int) -> dict | None:
     """The incentive this offer is allowed to carry, or None for full price.
 
@@ -142,8 +173,8 @@ def _authorized_incentive(db: Session, record: RecoveryPlanRecord, attempt_numbe
             decline_history=decline_history,
         )
     except Exception:
-        logger.exception("incentive decision failed for plan %s; offering at full price", record.plan_id)
-        return None
+        logger.exception("incentive decision failed for plan %s", record.plan_id)
+        decision = {}
 
     compliant, violation = _incentive_within_policy(
         decision,
@@ -153,9 +184,21 @@ def _authorized_incentive(db: Session, record: RecoveryPlanRecord, attempt_numbe
     )
     if not compliant:
         logger.info("incentive rejected by policy for plan %s: %s", record.plan_id, violation)
-        return None
+        decision = {}
+
     if decision.get("decision") != "offer_incentive":
-        return None
+        # incentive_from_attempt is an instruction from the business, not a
+        # suggestion: past this point in the queue the offer is authorized to
+        # carry a discount. The model still chooses WHICH one whenever it
+        # cooperates - this only covers it declining outright, erroring, or
+        # naming something the policy gate rejects, where the alternative was
+        # silently calling at full price after the owner asked not to.
+        # Whatever is picked here went through allowed_incentives and the same
+        # cap/floor check, so it can never exceed what they approved.
+        decision = _cheapest_compliant_incentive(business_policy, record)
+        if decision is None:
+            logger.info("no policy-compliant incentive available for plan %s", record.plan_id)
+            return None
 
     record.selected_incentive = decision
     record.stage = "INCENTIVE"
