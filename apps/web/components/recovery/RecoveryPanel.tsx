@@ -36,6 +36,7 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
   const [callState, setCallState] = useState<"idle" | "calling" | "placed" | "not_configured" | "failed">("idle");
   const [accepting, setAccepting] = useState(false);
   const [rearranged, setRearranged] = useState(false);
+  const [declining, setDeclining] = useState(false);
 
   useEffect(() => { dialog.current?.showModal(); }, []);
 
@@ -67,6 +68,26 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
       setFailed(true);
     } finally {
       setTriggering(false);
+    }
+  }
+
+  /** The candidate said no on the call. Nothing captures that today - a
+   *  live decline doesn't reach the state machine, so the offer would sit
+   *  until its timeout elapsed before anyone else was tried. Recording it
+   *  here advances to the next candidate immediately, which is also what
+   *  authorizes the incentive on that next offer (recovery_rules
+   *  .incentive_from_attempt). */
+  async function markDeclined(planId: string) {
+    setDeclining(true);
+    try {
+      const result = await respondToRecoveryPlan(planId, "declined");
+      setPlan(result);
+      setCallState("idle");
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    } finally {
+      setDeclining(false);
     }
   }
 
@@ -203,9 +224,15 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
               : `Call status: ${plan.outreach.status}`}
           </p>
         ) : (
-          <button type="button" className={styles.primary} onClick={() => callNow(plan.outreach!.id)}>📞 Call {candidates[0]?.name ?? "candidate"} now</button>
+          <button type="button" className={styles.primary} onClick={() => callNow(plan.outreach!.id)}>📞 Call {currentPatientId ?? candidates[0]?.name ?? "candidate"} now</button>
         )}
       </div>}
+      {isLive && plan?.status === "pending" && currentPatientId && !currentRaw?.currently_booked_slot_id && <p className={styles.status} role="status">
+        {currentPatientId} said no on the call? Record it and SlotSaver moves to the next candidate straight away — the next offer is the one allowed to carry a discount.{" "}
+        <button type="button" className={styles.secondary} onClick={() => plan.plan_id && markDeclined(plan.plan_id)} disabled={declining}>
+          {declining ? "Recording…" : `Mark ${currentPatientId} declined →`}
+        </button>
+      </p>}
       {isLive && plan?.status === "filled" && <p className={styles.status} role="status">Slot recovered — booked automatically once a candidate accepted. No owner action was required.</p>}
       {isLive && plan?.status === "no_candidates" && <p className={styles.status} role="status">No stored intent matched this slot — it would go unfilled.</p>}
       {isLive && plan?.status === "ranking_failed" && <p className={styles.status} role="status">{plan.message ?? "Ranking failed."}</p>}

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.agents.nemotron.incentive import decide_incentive
 from app.db.models.recovery import RecoveryPlanRecord
 from app.services.appointment_service import book_slot
+from app.services.business_profile_service import get_business_policy, get_recovery_rules
 from app.services.outreach_service import evaluate_candidate, maybe_auto_call, place_call_for_attempt
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,64 @@ def get_recovery_plan_from_db(db: Session, plan_id: str) -> dict | None:
     return plan_record_to_dict(record)
 
 
+def _authorized_incentive(db: Session, record: RecoveryPlanRecord, attempt_number: int) -> dict | None:
+    """The incentive this offer is allowed to carry, or None for full price.
+
+    Nothing here decides an incentive on its own - it asks Nemotron
+    (decide_incentive) and then runs the same deterministic policy gate the
+    exhaustion fallback uses, so an early discount can't exceed the caps an
+    owner set. Returns None whenever incentives are switched off, this
+    attempt is too early to sweeten, the model chose not to, or its choice
+    failed the gate.
+    """
+    rules = get_recovery_rules(db)
+    if not rules["incentive_fallback_enabled"]:
+        return None
+    if attempt_number < rules["incentive_from_attempt"]:
+        return None
+
+    business_policy = get_business_policy(db)
+    statuses = dict(record.candidate_statuses or {})
+    ranked = record.ranked_candidate_ids or []
+    decline_history = [
+        {"patient_id": pid, "response": statuses.get(pid, "declined")}
+        for pid in ranked
+        if statuses.get(pid) in ("declined", "expired")
+    ]
+    hours_until = (
+        datetime.datetime.fromisoformat(record.open_slot["start"]) - datetime.datetime.now()
+    ).total_seconds() / 3600
+
+    try:
+        decision = decide_incentive(
+            open_slot={**record.open_slot, "hours_until_appointment": round(hours_until, 1)},
+            business_policy=business_policy,
+            decline_history=decline_history,
+        )
+    except Exception:
+        logger.exception("incentive decision failed for plan %s; offering at full price", record.plan_id)
+        return None
+
+    compliant, violation = _incentive_within_policy(
+        decision,
+        business_policy,
+        record.open_slot.get("price", 0),
+        record.open_slot.get("service_type", ""),
+    )
+    if not compliant:
+        logger.info("incentive rejected by policy for plan %s: %s", record.plan_id, violation)
+        return None
+    if decision.get("decision") != "offer_incentive":
+        return None
+
+    record.selected_incentive = decision
+    record.stage = "INCENTIVE"
+    record.message = decision.get("reasoning")
+    db.commit()
+    db.refresh(record)
+    return decision
+
+
 def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
     """Advances a persisted plan's offer state machine. The DB row (not any
     in-memory dict) is the only source of truth read or written here.
@@ -177,12 +236,21 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
             )
             if next_candidate is not None:
                 try:
+                    # Attempt number is 1-based: the person we just moved to
+                    # is attempt current_candidate_index + 1. From
+                    # incentive_from_attempt onward the offer is allowed to
+                    # carry a discount, so "first person said no" leads to a
+                    # sweetened second call instead of the same pitch again.
+                    incentive_override = _authorized_incentive(
+                        db, record, attempt_number=record.current_candidate_index + 1
+                    )
                     outreach = evaluate_candidate(
                         db,
                         record.open_slot,
                         next_candidate,
                         next_candidate.get("match_score", 0.0),
                         record.revenue_at_risk or 0.0,
+                        incentive_override=incentive_override,
                     )
                     maybe_auto_call(db, outreach, candidate=next_candidate)
                 except Exception:

@@ -240,6 +240,9 @@ export interface RecoveryRules {
   candidate_timeout_seconds: number;
   max_recovery_attempts: number;
   incentive_fallback_enabled: boolean;
+  /** Which offer in the queue may first carry a discount. 2 = ask the best
+   *  match at full price, start sweetening from the second person onward. */
+  incentive_from_attempt: number;
 }
 
 export interface IncentivePolicy {

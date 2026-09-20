@@ -45,6 +45,12 @@ _DEFAULT_RECOVERY_RULES = {
     "candidate_timeout_seconds": 25,
     "max_recovery_attempts": 5,
     "incentive_fallback_enabled": True,
+    # Which offer in the queue is the first allowed to carry a discount.
+    # 1 = sweeten immediately, 2 = ask the best match at full price and start
+    # discounting from the second person onward, a large number = never until
+    # the whole queue is exhausted (the original fallback-only behavior).
+    # Whatever it authorizes is still capped by incentive_policy.
+    "incentive_from_attempt": 2,
 }
 
 

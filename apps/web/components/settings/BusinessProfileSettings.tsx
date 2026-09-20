@@ -282,6 +282,7 @@ function PolicySection({ profile, onSave }: { profile: BusinessProfile; onSave: 
   const [candidateTimeoutSeconds, setCandidateTimeoutSeconds] = useState(profile.recovery_rules.candidate_timeout_seconds);
   const [maxRecoveryAttempts, setMaxRecoveryAttempts] = useState(profile.recovery_rules.max_recovery_attempts);
   const [incentiveFallbackEnabled, setIncentiveFallbackEnabled] = useState(profile.recovery_rules.incentive_fallback_enabled);
+  const [incentiveFromAttempt, setIncentiveFromAttempt] = useState(profile.recovery_rules.incentive_from_attempt);
 
   const [maxDiscountPercent, setMaxDiscountPercent] = useState(profile.incentive_policy.max_discount_percent);
   const [minimumRevenue, setMinimumRevenue] = useState(profile.incentive_policy.minimum_revenue);
@@ -296,6 +297,7 @@ function PolicySection({ profile, onSave }: { profile: BusinessProfile; onSave: 
     setCandidateTimeoutSeconds(profile.recovery_rules.candidate_timeout_seconds);
     setMaxRecoveryAttempts(profile.recovery_rules.max_recovery_attempts);
     setIncentiveFallbackEnabled(profile.recovery_rules.incentive_fallback_enabled);
+    setIncentiveFromAttempt(profile.recovery_rules.incentive_from_attempt);
     setMaxDiscountPercent(profile.incentive_policy.max_discount_percent);
     setMinimumRevenue(profile.incentive_policy.minimum_revenue);
     setIncentiveScoreThreshold(profile.incentive_policy.incentive_score_threshold);
@@ -321,6 +323,7 @@ function PolicySection({ profile, onSave }: { profile: BusinessProfile; onSave: 
         candidate_timeout_seconds: candidateTimeoutSeconds,
         max_recovery_attempts: maxRecoveryAttempts,
         incentive_fallback_enabled: incentiveFallbackEnabled,
+        incentive_from_attempt: incentiveFromAttempt,
       },
       incentive_policy: {
         max_discount_percent: maxDiscountPercent,
@@ -343,6 +346,7 @@ function PolicySection({ profile, onSave }: { profile: BusinessProfile; onSave: 
         <label className={styles.field}>Candidate timeout (seconds)<input type="number" min={5} value={candidateTimeoutSeconds} onChange={(e) => setCandidateTimeoutSeconds(Number(e.target.value))} /></label>
         <label className={styles.field}>Max recovery attempts<input type="number" min={1} value={maxRecoveryAttempts} onChange={(e) => setMaxRecoveryAttempts(Number(e.target.value))} /></label>
         <label className={`${styles.field} ${styles.checkboxField}`}><input type="checkbox" checked={incentiveFallbackEnabled} onChange={(e) => setIncentiveFallbackEnabled(e.target.checked)} /> Incentive fallback enabled</label>
+        <label className={styles.field}>Start offering a discount from call #<input type="number" min={1} value={incentiveFromAttempt} onChange={(e) => setIncentiveFromAttempt(Number(e.target.value))} /></label>
       </div>
 
       <div className={styles.grid} style={{ marginTop: 14 }}>
