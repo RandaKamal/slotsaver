@@ -5,6 +5,7 @@ only decides who the "current" offer belongs to and what happens next.
 """
 
 import datetime
+import logging
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -12,6 +13,9 @@ from sqlalchemy.orm import Session
 from app.agents.nemotron.incentive import decide_incentive
 from app.db.models.recovery import RecoveryPlanRecord
 from app.services.appointment_service import book_slot
+from app.services.outreach_service import evaluate_candidate, maybe_auto_call
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime.datetime:
@@ -149,6 +153,7 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
         if record.current_candidate_index >= len(ranked):
             record.status = "exhausted"
             record.current_offer_at = None
+            record.candidate_statuses = statuses
         else:
             next_patient_id = ranked[record.current_candidate_index]
             # Unconditional, not setdefault: a candidate re-offered during the
@@ -158,7 +163,39 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
             # apply_incentive_decision's own first-offer assignment below).
             statuses[next_patient_id] = "offered"
             record.current_offer_at = _utcnow()
-        record.candidate_statuses = statuses
+            record.candidate_statuses = statuses
+            db.commit()
+            db.refresh(record)
+
+            # First pass, next candidate: same automatic-call pipeline the
+            # very first offer used (see slot_recovery.run_recovery) - every
+            # candidate in the ranked list gets an actual call in turn, not
+            # just bookkeeping on this row, if the business has opted into
+            # auto_call_enabled.
+            next_candidate = next(
+                (c for c in (record.candidates or []) if c.get("patient_id") == next_patient_id), None
+            )
+            if next_candidate is not None:
+                try:
+                    outreach = evaluate_candidate(
+                        db,
+                        record.open_slot,
+                        next_candidate,
+                        next_candidate.get("match_score", 0.0),
+                        record.revenue_at_risk or 0.0,
+                    )
+                    maybe_auto_call(db, outreach)
+                except Exception:
+                    # The offer advance itself already succeeded and is
+                    # committed above - only the next candidate's outreach/
+                    # call attempt failed, same "don't lose a real event over
+                    # a downstream step" rule slot_recovery applies to ranking
+                    # failures. Logged, not raised.
+                    logger.exception(
+                        "outreach/auto-call failed for next candidate %s on plan %s",
+                        next_patient_id, record.plan_id,
+                    )
+            return plan_record_to_dict(record)
 
     else:
         raise HTTPException(status_code=422, detail=f"invalid response: {response!r}")
@@ -262,9 +299,39 @@ def apply_incentive_decision(db: Session, plan_id: str, business_policy: dict) -
         statuses[ranked[0]] = "offered"
         record.candidate_statuses = statuses
         record.current_offer_at = _utcnow()
+        db.commit()
+        db.refresh(record)
+
+        # The re-offer needs its OWN outreach attempt and call brief - the
+        # original one (from the full-price round) was generated before this
+        # discount existed, so its call_brief never mentions it. Passing the
+        # already-decided, already-policy-checked decision straight through
+        # (incentive_override) means this doesn't ask Nemotron to pick an
+        # incentive a second time, just to draft the call around it.
+        reoffer_candidate = next(
+            (c for c in (record.candidates or []) if c.get("patient_id") == ranked[0]), None
+        )
+        if reoffer_candidate is not None:
+            try:
+                outreach = evaluate_candidate(
+                    db,
+                    record.open_slot,
+                    reoffer_candidate,
+                    reoffer_candidate.get("match_score", 0.0),
+                    record.revenue_at_risk or 0.0,
+                    incentive_override=decision,
+                    business_policy=business_policy,
+                )
+                maybe_auto_call(db, outreach)
+            except Exception:
+                logger.exception(
+                    "outreach/auto-call failed for incentive re-offer to %s on plan %s",
+                    ranked[0], record.plan_id,
+                )
+        return plan_record_to_dict(record)
+
     # continue_full_price / stop_recovery / no candidates left: status stays
     # "exhausted" - there is nothing left to offer.
-
     db.commit()
     db.refresh(record)
     return plan_record_to_dict(record)

@@ -36,6 +36,12 @@ _DEFAULT_BOOKING_RULES = {
 
 _DEFAULT_RECOVERY_RULES = {
     "auto_recovery_enabled": True,
+    # Whether a candidate is actually dialed without an owner clicking
+    # Approve first - the business owner's opt-in this whole automatic
+    # workflow depends on. Off by default: a business that hasn't reviewed
+    # its incentive policy shouldn't wake up to the system autonomously
+    # discounting appointments and cold-calling its customer list.
+    "auto_call_enabled": False,
     "candidate_timeout_seconds": 25,
     "max_recovery_attempts": 5,
     "incentive_fallback_enabled": True,

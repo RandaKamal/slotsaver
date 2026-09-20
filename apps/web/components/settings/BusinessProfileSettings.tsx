@@ -278,6 +278,7 @@ function HoursSection({ profile, onSave }: { profile: BusinessProfile; onSave: S
 
 function PolicySection({ profile, onSave }: { profile: BusinessProfile; onSave: SaveFn }) {
   const [autoRecoveryEnabled, setAutoRecoveryEnabled] = useState(profile.recovery_rules.auto_recovery_enabled);
+  const [autoCallEnabled, setAutoCallEnabled] = useState(profile.recovery_rules.auto_call_enabled);
   const [candidateTimeoutSeconds, setCandidateTimeoutSeconds] = useState(profile.recovery_rules.candidate_timeout_seconds);
   const [maxRecoveryAttempts, setMaxRecoveryAttempts] = useState(profile.recovery_rules.max_recovery_attempts);
   const [incentiveFallbackEnabled, setIncentiveFallbackEnabled] = useState(profile.recovery_rules.incentive_fallback_enabled);
@@ -291,6 +292,7 @@ function PolicySection({ profile, onSave }: { profile: BusinessProfile; onSave: 
 
   useEffect(() => {
     setAutoRecoveryEnabled(profile.recovery_rules.auto_recovery_enabled);
+    setAutoCallEnabled(profile.recovery_rules.auto_call_enabled);
     setCandidateTimeoutSeconds(profile.recovery_rules.candidate_timeout_seconds);
     setMaxRecoveryAttempts(profile.recovery_rules.max_recovery_attempts);
     setIncentiveFallbackEnabled(profile.recovery_rules.incentive_fallback_enabled);
@@ -315,6 +317,7 @@ function PolicySection({ profile, onSave }: { profile: BusinessProfile; onSave: 
     return onSave({
       recovery_rules: {
         auto_recovery_enabled: autoRecoveryEnabled,
+        auto_call_enabled: autoCallEnabled,
         candidate_timeout_seconds: candidateTimeoutSeconds,
         max_recovery_attempts: maxRecoveryAttempts,
         incentive_fallback_enabled: incentiveFallbackEnabled,
@@ -341,6 +344,18 @@ function PolicySection({ profile, onSave }: { profile: BusinessProfile; onSave: 
         <label className={styles.field}>Max recovery attempts<input type="number" min={1} value={maxRecoveryAttempts} onChange={(e) => setMaxRecoveryAttempts(Number(e.target.value))} /></label>
         <label className={`${styles.field} ${styles.checkboxField}`}><input type="checkbox" checked={incentiveFallbackEnabled} onChange={(e) => setIncentiveFallbackEnabled(e.target.checked)} /> Incentive fallback enabled</label>
       </div>
+
+      <div className={styles.grid} style={{ marginTop: 14 }}>
+        <label className={`${styles.field} ${styles.checkboxField}`}>
+          <input type="checkbox" checked={autoCallEnabled} onChange={(e) => setAutoCallEnabled(e.target.checked)} /> Auto-call candidates (no approval click)
+        </label>
+      </div>
+      <p className={styles.sectionHint} style={{ marginTop: 6 }}>
+        When on, every candidate is called automatically as their turn comes up — first pass at full price,
+        then the incentive pass above once everyone has declined or timed out. You are agreeing that Nemotron
+        can place real outbound calls and offer the incentives configured below with no per-call approval.
+        Off by default; the pending-approval queue on the dashboard is used instead.
+      </p>
 
       <div className={styles.grid} style={{ marginTop: 14 }}>
         <label className={styles.field}>Max discount %<input type="number" min={0} max={100} value={maxDiscountPercent} onChange={(e) => setMaxDiscountPercent(Number(e.target.value))} /></label>

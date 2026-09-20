@@ -233,6 +233,10 @@ export interface BookingRules {
 
 export interface RecoveryRules {
   auto_recovery_enabled: boolean;
+  /** Places the call automatically, with no owner approval click, for every
+   *  candidate in turn (then the incentive re-offer) - the business's
+   *  explicit opt-in to the fully automatic calling workflow. */
+  auto_call_enabled: boolean;
   candidate_timeout_seconds: number;
   max_recovery_attempts: number;
   incentive_fallback_enabled: boolean;

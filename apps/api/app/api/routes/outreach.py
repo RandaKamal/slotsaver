@@ -1,10 +1,11 @@
 """The owner-approval queue for outbound recovery calls.
 
-Nemotron decides a call is worth making and drafts what the agent should say;
-nothing dials out until an owner approves the specific row here. Approving
-does not yet place a call - place_call() is a stub until Twilio is wired
-(see docs/twilio-integration.md) - but the row is marked 'approved' so the
-dial-out step has exactly one well-defined trigger to attach to later.
+Nemotron decides a call is worth making and drafts what the agent should
+say. If the active business profile has opted into
+recovery_rules.auto_call_enabled, the call already went out automatically
+(see outreach_service.maybe_auto_call) and this queue is just a record of
+that. Otherwise nothing dials until an owner approves the specific row here
+via POST /{attempt_id}/approve.
 """
 
 import logging
@@ -14,11 +15,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models.appointment import Appointment
 from app.db.models.outreach import OutreachAttempt
-from app.services.call_service import CallNotConfigured, place_call
-from app.services.patient_memory import build_patient_brief
 from app.db.session import get_db
+from app.services.outreach_service import place_call_for_attempt
 
 router = APIRouter(prefix="/api/outreach", tags=["outreach"])
 logger = logging.getLogger(__name__)
@@ -44,7 +43,12 @@ def _serialize(a: OutreachAttempt) -> dict:
 
 @router.get("/pending")
 def list_pending(db: Session = Depends(get_db)) -> list[dict]:
-    """Calls Nemotron thinks are worth making, awaiting an owner's decision."""
+    """Calls Nemotron thinks are worth making, awaiting an owner's decision.
+
+    Only ever has rows when auto_call_enabled is off - an auto-placed call
+    skips 'pending_approval' entirely (see maybe_auto_call), so this queue
+    naturally empties out once a business turns full automation on.
+    """
     rows = db.execute(
         select(OutreachAttempt)
         .where(OutreachAttempt.status == "pending_approval")
@@ -87,45 +91,14 @@ def _mark(db: Session, attempt_id: int, status: str, payload: DecisionRequest) -
 @router.post("/{attempt_id}/approve")
 def approve(attempt_id: int, payload: DecisionRequest, db: Session = Depends(get_db)) -> dict:
     attempt = _mark(db, attempt_id, "approved", payload)
-
     # The approval itself always succeeds and is recorded regardless of
     # whether telephony is wired up yet - "approved, call not yet placed" is
-    # a normal and honest state, not an error.
-    slot_row = db.get(Appointment, attempt.slot_id)
-    slot = (
-        {
-            "provider": slot_row.provider,
-            "service_type": slot_row.service,
-            "start": slot_row.start_time.strftime("%A %d %B at %I:%M %p"),
-        }
-        if slot_row
-        else None
-    )
-    call_error: str | None = None
-    try:
-        place_call(attempt, slot, build_patient_brief(db, attempt.patient_id))
-        attempt.status = "placed"
-    except CallNotConfigured as exc:
-        logger.info("attempt %s approved but not callable yet: %s", attempt_id, exc)
-        call_error = f"not configured: {exc}"
-    except Exception as exc:
-        logger.exception("call placement failed for attempt %s", attempt_id)
-        attempt.status = "failed"
-        # Full exception (which can embed the ElevenLabs/Twilio request URL
-        # or response body) goes to the server log only. This is an
-        # unauthenticated public endpoint, so the client only gets the
-        # exception's type - enough to tell "config problem" from
-        # "telephony provider rejected the call" without leaking anything
-        # from a third-party error body.
-        call_error = f"call_placement_failed: {type(exc).__name__}"
-    db.commit()
-    db.refresh(attempt)
+    # a normal and honest state, not an error. place_call_for_attempt leaves
+    # status "approved" on CallNotConfigured, or sets "placed"/"failed".
+    attempt = place_call_for_attempt(db, attempt)
     result = _serialize(attempt)
-    # Surfaced here (not just logged) because this deployment's operator may
-    # not have log access - a 500-line stack trace only in Render's own logs
-    # is useless if nobody can open Render's logs mid-demo.
-    if call_error:
-        result["call_error"] = call_error
+    if attempt.status not in ("placed",):
+        result["call_error"] = f"call_status:{attempt.status}"
     return result
 
 

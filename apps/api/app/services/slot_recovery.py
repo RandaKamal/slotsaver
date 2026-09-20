@@ -26,7 +26,7 @@ from app.db.models.appointment import Appointment
 from app.db.session import SessionLocal
 from app.services.appointment_service import cancel_appointment
 from app.services.business_profile_service import get_recovery_rules
-from app.services.outreach_service import evaluate_top_candidate
+from app.services.outreach_service import evaluate_candidate, maybe_auto_call
 from app.services.recovery_matcher import find_candidates
 from app.services.recovery_service import (
     get_latest_plan_for_slot,
@@ -181,7 +181,8 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
 
     # Ranking says who COULD take the slot; this decides whether calling the
     # top match is worth doing and drafts what the agent should say.
-    outreach = evaluate_top_candidate(db, open_slot, top_candidate, top_score, slot.price)
+    outreach = evaluate_candidate(db, open_slot, top_candidate, top_score, slot.price)
+    outreach = maybe_auto_call(db, outreach)
 
     return {
         **plan,

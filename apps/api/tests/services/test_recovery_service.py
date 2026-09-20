@@ -39,6 +39,12 @@ BUSINESS_POLICY = {
     "excluded_services": ["cosmetic_consult"],
 }
 
+# should_call=False means evaluate_candidate never reaches generate_call_brief
+# or maybe_auto_call's place_call - the one mock needed to keep every
+# candidate-advance in this test network-free, now that record_candidate_response
+# and apply_incentive_decision both create a real outreach attempt per candidate.
+FAKE_OUTREACH_DECISION = {"should_call": False, "reason": "test - no call needed"}
+
 FAKE_INCENTIVE_DECISION = {
     "decision": "offer_incentive",
     "chosen_incentive": "10_percent_discount",
@@ -103,6 +109,9 @@ class RecoveryIncentiveReofferStatusTest(unittest.TestCase):
         with patch(
             "app.services.recovery_service.decide_incentive",
             return_value=FAKE_INCENTIVE_DECISION,
+        ), patch(
+            "app.services.outreach_service.decide_outreach",
+            return_value=FAKE_OUTREACH_DECISION,
         ):
             plan = apply_incentive_decision(self.db, "plan_test", BUSINESS_POLICY)
         self.assertEqual(plan["stage"], "INCENTIVE")
@@ -113,7 +122,8 @@ class RecoveryIncentiveReofferStatusTest(unittest.TestCase):
     def test_declined_reoffer_clears_stale_status(self):
         self._reoffer_via_incentive()
 
-        plan = record_candidate_response(self.db, "plan_test", "declined")
+        with patch("app.services.outreach_service.decide_outreach", return_value=FAKE_OUTREACH_DECISION):
+            plan = record_candidate_response(self.db, "plan_test", "declined")
 
         self.assertEqual(plan["current_candidate_index"], 1)
         self.assertEqual(plan["candidate_statuses"]["p1"], "declined")
@@ -134,7 +144,8 @@ class RecoveryIncentiveReofferStatusTest(unittest.TestCase):
     def test_timeout_reoffer_clears_stale_status(self):
         self._reoffer_via_incentive()
 
-        plan = record_candidate_response(self.db, "plan_test", "timeout")
+        with patch("app.services.outreach_service.decide_outreach", return_value=FAKE_OUTREACH_DECISION):
+            plan = record_candidate_response(self.db, "plan_test", "timeout")
 
         self.assertEqual(plan["current_candidate_index"], 1)
         self.assertEqual(plan["candidate_statuses"]["p1"], "expired")
