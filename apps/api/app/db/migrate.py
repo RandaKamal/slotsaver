@@ -57,6 +57,7 @@ _ADDITIVE: dict[str, dict[str, _Column]] = {
         "notify_if_opens": _Column("BOOLEAN", default=_FALSE, not_null=True),
         "requested_time": _Column("VARCHAR"),
         "refinement_diff": _Column("JSON"),
+        "phone_number": _Column("VARCHAR"),
     },
     "recovery_plans": {
         "candidate_statuses": _Column("JSON", default=_EMPTY_JSON, not_null=True),

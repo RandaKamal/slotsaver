@@ -59,27 +59,40 @@ def call_nim(
     toggle just ignore the extra text.
     """
     thinking_suffix = "\n\ndetailed thinking on" if detailed_thinking else "\n\ndetailed thinking off"
-    response = nim_client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt + thinking_suffix},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=temperature,
-        top_p=1,
-        max_tokens=max_tokens,
-        stream=False,
+    response = _with_backoff(
+        lambda: nim_client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt + thinking_suffix},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+            top_p=1,
+            max_tokens=max_tokens,
+            stream=False,
+        )
     )
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if content is None:
+        # A filtered or reasoning-only completion yields None, and handing that
+        # to json.loads raises TypeError - which call_nim_json's retry did not
+        # catch, so every remaining attempt was skipped. ValueError keeps it on
+        # the retryable path.
+        raise ValueError(f"{model} returned an empty completion (content=None)")
+    return content
 
 
 def call_nim_json(model: str, system_prompt: str, user_prompt: str, retries: int = 1) -> dict:
     last_error: Exception | None = None
     for _ in range(retries + 1):
-        raw = call_nim(model, system_prompt, user_prompt, temperature=0.2, max_tokens=2048)
         try:
+            # The model call belongs INSIDE the try: it was outside, so a
+            # transport error or an empty completion escaped the loop and
+            # burned every remaining retry. TypeError is caught alongside
+            # ValueError because json.loads raises it on a non-string.
+            raw = call_nim(model, system_prompt, user_prompt, temperature=0.2, max_tokens=2048)
             return extract_json_object(raw)
-        except ValueError as exc:
+        except (ValueError, TypeError) as exc:
             last_error = exc
     raise ValueError(f"{model} did not return valid JSON after {retries + 1} attempts: {last_error}")
 
