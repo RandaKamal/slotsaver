@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { approveOutreach, fetchRecoveryPlanBySlot, recoverFromCancellation, type RecoveryPlan } from "@/lib/api";
+import { approveOutreach, fetchRecoveryPlanBySlot, recoverFromCancellation, respondToRecoveryPlan, type RecoveryPlan } from "@/lib/api";
 import { dateLabel, timeLabel, type Appointment } from "@/components/appointments/appointment-data";
 import { Icon } from "@/components/ui/Icon";
 import { sampleCandidates } from "./mock-data";
@@ -34,6 +34,8 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
   const [failed, setFailed] = useState(false);
   const [triggering, setTriggering] = useState(false);
   const [callState, setCallState] = useState<"idle" | "calling" | "placed" | "not_configured" | "failed">("idle");
+  const [accepting, setAccepting] = useState(false);
+  const [rearranged, setRearranged] = useState(false);
 
   useEffect(() => { dialog.current?.showModal(); }, []);
 
@@ -65,6 +67,20 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
       setFailed(true);
     } finally {
       setTriggering(false);
+    }
+  }
+
+  async function acceptRearrangement(planId: string) {
+    setAccepting(true);
+    try {
+      const result = await respondToRecoveryPlan(planId, "accepted");
+      setPlan(result);
+      setRearranged(true);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    } finally {
+      setAccepting(false);
     }
   }
 
@@ -102,6 +118,11 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
   const ranked = plan?.ranked_candidate_ids ?? [];
   const statuses = plan?.candidate_statuses ?? {};
   const currentIndex = plan?.current_candidate_index ?? 0;
+  const currentPatientId = ranked[currentIndex];
+  const currentRaw = isLive ? plan?.candidates?.find((c) => c.patient_id === currentPatientId) : undefined;
+  const rearrangeFromWhen = currentRaw?.currently_booked_start
+    ? new Date(currentRaw.currently_booked_start).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })
+    : "a different time";
   // Awaiting the first plan: a real state right after a fresh cancellation,
   // not a failure - the scheduler ticks every few seconds.
   const awaitingPlan = slotId !== undefined && !loading && plan === null;
@@ -148,6 +169,12 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
           <div className={styles.score}><strong>{candidate.score}%</strong><span>{isLive ? "Match score" : "Example score"}</span></div>
         </li>)}
       </ol>
+      {isLive && plan?.status === "pending" && currentRaw?.currently_booked_slot_id && <div className={styles.status} role="status">
+        <p><strong>Rearrange calendar?</strong> {currentPatientId} is already booked {rearrangeFromWhen}, but their stored preference is a better fit for this slot. Moving them here frees up their old time for further recovery, and they'll be sent a message about the change.</p>
+        <button type="button" className={styles.primary} onClick={() => plan.plan_id && acceptRearrangement(plan.plan_id)} disabled={accepting || rearranged}>
+          {accepting ? "Rearranging…" : rearranged ? "Rearranged ✓ — message sent" : "Rearrange & notify"}
+        </button>
+      </div>}
       {isLive && plan?.stage === "INCENTIVE" && plan?.selected_incentive && <p className={styles.status} role="status">
         {plan.selected_incentive.decision === "offer_incentive"
           ? `Clinic-approved incentive offered: ${plan.selected_incentive.chosen_incentive ?? "discount"}. ${plan.selected_incentive.reasoning ?? ""}`

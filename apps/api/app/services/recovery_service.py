@@ -130,6 +130,18 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
         record.candidate_statuses = statuses
         record.status = "filled"
         record.current_offer_at = None  # nothing left to time out
+        db.commit()
+        db.refresh(record)
+
+        # Deferred import: slot_recovery.py imports FROM this module (it
+        # calls save_recovery_plan/get_latest_plan_for_slot), so importing it
+        # back at module load time would be circular. If this candidate was
+        # already booked elsewhere, accepting this offer was a move, not a
+        # plain fill - see cascade_after_move.
+        from app.services.slot_recovery import cascade_after_move
+
+        cascade_after_move(db, current_patient_id, record.slot_id)
+        return plan_record_to_dict(record)
 
     elif response in ("declined", "timeout"):
         statuses[current_patient_id] = "declined" if response == "declined" else "expired"

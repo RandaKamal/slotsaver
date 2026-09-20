@@ -17,12 +17,14 @@ Assumes the slot is ALREADY free; it does not release it.
 import datetime
 import logging
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.mock_store import RECOVERY_PLANS, new_plan_id
 from app.agents.nemotron.ranker import rank_candidates
 from app.db.models.appointment import Appointment
 from app.db.session import SessionLocal
+from app.services.appointment_service import cancel_appointment
 from app.services.business_profile_service import get_recovery_rules
 from app.services.outreach_service import evaluate_top_candidate
 from app.services.recovery_matcher import find_candidates
@@ -74,7 +76,7 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     ):
         return {**plan_record_to_dict(existing), "eligible": [], "excluded": [], "outreach": None}
 
-    eligible, excluded = find_candidates(db, slot.start_time, slot.provider)
+    eligible, excluded = find_candidates(db, slot.start_time, slot.provider, exclude_slot_id=slot.id)
     open_slot = slot_payload(slot)
 
     if not eligible:
@@ -127,6 +129,18 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     # to resolve: it can rank nobody, or name a patient that is not in the
     # eligible set. Unguarded, that raised IndexError/StopIteration and left
     # the slot cancelled with no outreach and nothing recorded to say why.
+    # Nemotron's own ranked output only carries patient_id/match_score/reason
+    # (whatever shape it chose to return) - re-attach the currently_booked_*
+    # fields from the deterministic eligible list so the frontend can tell a
+    # rearrangement candidate (already booked elsewhere) from a plain fill.
+    eligible_by_id = {c["patient_id"]: c for c in eligible}
+    ranked_candidates = ranking.get("candidates") or eligible
+    for candidate in ranked_candidates:
+        source = eligible_by_id.get(candidate.get("patient_id"))
+        if source:
+            candidate["currently_booked_slot_id"] = source.get("currently_booked_slot_id")
+            candidate["currently_booked_start"] = source.get("currently_booked_start")
+
     max_attempts = get_recovery_rules(db)["max_recovery_attempts"]
     ranked_ids = (ranking.get("ranked_candidate_ids") or [])[:max_attempts]
     top_candidate = None
@@ -143,7 +157,7 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     plan = {
         "plan_id": plan_id,
         "open_slot": open_slot,
-        "candidates": ranking.get("candidates") or eligible,
+        "candidates": ranked_candidates,
         "ranked_candidate_ids": ranked_ids,
         "current_candidate_index": 0,
         "stage": "NORMAL",
@@ -182,6 +196,38 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
             "status": outreach.status,
         },
     }
+
+
+def cascade_after_move(db: Session, patient_id: str, filled_slot_id: int) -> dict | None:
+    """Called right after a recovery offer is ACCEPTED. If the accepting
+    patient was already booked into a different appointment, this was a
+    rearrangement, not a plain fill: their old slot is now free, so recovery
+    runs on it too. Returns that new recovery result, or None if this
+    candidate had no other booking (the ordinary "filled a gap" case).
+
+    This is what turns one cancellation into a chain: slot A opens, the best
+    match for A turns out to be a patient already booked into (a worse-fit)
+    slot B, moving them frees B, and B's own best match might itself already
+    be booked elsewhere, and so on - it terminates naturally once a freed
+    slot's best remaining candidates are all genuinely new fills (or none at
+    all), which is exactly the "one awkward slot left over" outcome.
+    """
+    other = db.execute(
+        select(Appointment).where(
+            Appointment.customer_id == patient_id,
+            Appointment.status == "booked",
+            Appointment.id != filled_slot_id,
+        )
+    ).scalars().first()
+    if other is None:
+        return None
+
+    freed = cancel_appointment(db, other.id)
+    logger.info(
+        "cascade: moving %s into slot %s freed their old slot %s",
+        patient_id, filled_slot_id, other.id,
+    )
+    return run_recovery(db, freed, cancelled_by=patient_id)
 
 
 def recover_freed_slot(slot_id: int) -> None:

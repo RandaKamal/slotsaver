@@ -56,6 +56,11 @@ export interface RecoveryCandidate {
   patient_id: string;
   match_score: number;
   reason: string;
+  /** Set when this candidate is already booked into a different appointment -
+   *  accepting their offer is a REARRANGEMENT (move them, free their old
+   *  slot) rather than a plain fill. */
+  currently_booked_slot_id?: number | null;
+  currently_booked_start?: string | null;
 }
 
 export interface ExcludedCandidate {
@@ -96,6 +101,23 @@ export async function recoverFromCancellation(slotId: number): Promise<RecoveryP
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`POST /api/recovery/from-cancellation -> ${res.status}`);
+  return res.json() as Promise<RecoveryPlan>;
+}
+
+// --- POST /api/recovery/{plan_id}/response -----------------------------------
+
+/** Advances the current offer: "accepted" books it for the current
+ *  candidate (and, if they were already booked elsewhere, triggers the
+ *  rearrangement cascade on the backend - see slot_recovery.cascade_after_move).
+ *  "declined" / "timeout" move to the next ranked candidate. */
+export async function respondToRecoveryPlan(planId: string, response: "accepted" | "declined" | "timeout"): Promise<RecoveryPlan> {
+  const res = await fetch(`${API_URL}/api/recovery/${planId}/response`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ response }),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`POST /api/recovery/${planId}/response -> ${res.status}`);
   return res.json() as Promise<RecoveryPlan>;
 }
 
