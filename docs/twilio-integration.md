@@ -79,3 +79,67 @@ patients until upgraded.
    ElevenLabs' outbound API, passing the stored `call_brief` as the
    conversation override.
 5. Add a call-outcome webhook so `recent_declines` can finally be real.
+
+---
+
+## Phase B — done (2026-09-19)
+
+Everything buildable without a Twilio account now exists:
+
+- **Three webhook tools** created in the ElevenLabs workspace, pointing at
+  the same backend routes the client tools already use:
+  - `get_available_slots_call` (`tool_1301m2yb2arne1ztf3jt0js6n6dj`)
+  - `save_scheduling_intent_call` (`tool_7201m2yb2x9xecpty0e8z17589m1`)
+  - `book_appointment_call` (`tool_6301m2yb2xj7e1e8z5swnjwapkx0`)
+
+  `patient_id` on the last two is bound via ElevenLabs' `dynamic_variable`
+  mechanism, not exposed as an LLM-fillable parameter — the model can never
+  invent a patient identity, phone or browser. Currently pointed at
+  `http://localhost:8000`, which is a placeholder: **run
+  `python scripts/update_call_tool_urls.py <ngrok-url>` every time your
+  tunnel restarts**, before testing a real call.
+
+- **The browser widget's tools are untouched.** Verified live: the agent's
+  default `tool_ids` still resolve to the three original client tools
+  (`save_scheduling_intent`, `get_available_slots`, `book_appointment`).
+  Nothing about the existing web demo changes.
+
+- **Per-conversation tool override enabled** on the agent
+  (`platform_settings.overrides.conversation_config_override.agent.prompt.tool_ids = true`),
+  so an outbound call can swap in the three `_call` tools above without
+  touching the persistent agent config the browser widget uses.
+
+  **Not yet proven to work.** I tried validating this through
+  `simulate-conversation` with the override passed both as a top-level
+  `conversation_config_override` and nested under
+  `conversation_initiation_client_data`; neither produced a webhook-tool
+  call I could observe, and I don't have enough certainty about what that
+  test endpoint actually honors to call this confirmed. Treat it as
+  "configured, not yet verified" until a real outbound call proves it.
+
+- **`app/services/call_service.py::place_call()`** — full outbound-call
+  request built (agent id, phone number id, target number, the tool
+  override above, and `call_brief.opening_line` as the conversation's
+  `first_message`), wired into `POST /api/outreach/{id}/approve`. **Written
+  against ElevenLabs' documented shape but never called against a real
+  number** — verify `OUTBOUND_CALL_URL` and the payload shape against
+  ElevenLabs' current docs before the first real test.
+
+- **Approve degrades honestly**, verified both ways:
+  - No phone number on file → stays `"approved"`, no call attempted, no crash.
+  - Phone number set but `ELEVENLABS_PHONE_NUMBER_ID` still empty → same:
+    `"approved"`, not `"placed"`, no crash.
+  - Only once a call is actually placed does status become `"placed"` (or
+    `"failed"` if ElevenLabs' API rejects the request).
+
+## What Phase C/D still need from you
+
+1. `ELEVENLABS_PHONE_NUMBER_ID` in `.env` — appears once the Twilio number is
+   imported into ElevenLabs (Conversational AI → Phone Numbers → Import).
+2. An ngrok authtoken (separate free signup at ngrok.com — not a Twilio
+   thing) so `pyngrok` can actually open a tunnel; it now requires one.
+3. A verified phone number in Twilio's trial console to test with.
+4. Once 1–3 exist: run `update_call_tool_urls.py`, add a real phone number to
+   a `PreferenceRecord`, approve its outreach attempt, and see whether
+   `place_call()`'s request shape is actually correct — this is the first
+   real test of everything in this section.

@@ -7,15 +7,19 @@ does not yet place a call - place_call() is a stub until Twilio is wired
 dial-out step has exactly one well-defined trigger to attach to later.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models.outreach import OutreachAttempt
+from app.services.call_service import CallNotConfigured, place_call
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/outreach", tags=["outreach"])
+logger = logging.getLogger(__name__)
 
 
 def _serialize(a: OutreachAttempt) -> dict:
@@ -81,8 +85,20 @@ def _mark(db: Session, attempt_id: int, status: str, payload: DecisionRequest) -
 @router.post("/{attempt_id}/approve")
 def approve(attempt_id: int, payload: DecisionRequest, db: Session = Depends(get_db)) -> dict:
     attempt = _mark(db, attempt_id, "approved", payload)
-    # TODO: place_call(attempt) once Twilio + ElevenLabs outbound are wired.
-    # Approval is recorded regardless, so the trigger point stays well-defined.
+
+    # The approval itself always succeeds and is recorded regardless of
+    # whether telephony is wired up yet - "approved, call not yet placed" is
+    # a normal and honest state, not an error.
+    try:
+        place_call(attempt)
+        attempt.status = "placed"
+    except CallNotConfigured as exc:
+        logger.info("attempt %s approved but not callable yet: %s", attempt_id, exc)
+    except Exception:
+        logger.exception("call placement failed for attempt %s", attempt_id)
+        attempt.status = "failed"
+    db.commit()
+    db.refresh(attempt)
     return _serialize(attempt)
 
 
