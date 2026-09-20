@@ -19,7 +19,7 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.business_policy import BUSINESS_POLICY
+from app.core.business_policy import get_business_policy
 from app.agents.nemotron.incentive import decide_incentive
 from app.agents.nemotron.outreach import decide_outreach, generate_call_brief
 from app.db.models.outreach import OutreachAttempt
@@ -65,11 +65,13 @@ def evaluate_top_candidate(
         datetime.datetime.fromisoformat(open_slot["start"]) - datetime.datetime.now()
     ).total_seconds() / 3600
 
+    business_policy = get_business_policy(db)
+
     incentive = None
-    if match_score < 0.9:  # a near-perfect match doesn't need to be bought
+    if match_score < business_policy["incentive_score_threshold"]:  # a near-perfect match doesn't need to be bought
         incentive_decision = decide_incentive(
             open_slot={**open_slot, "hours_until_appointment": round(hours_until, 1)},
-            business_policy=BUSINESS_POLICY,
+            business_policy=business_policy,
             decline_history=[],
         )
         if incentive_decision.get("decision") == "offer_incentive":
@@ -82,7 +84,7 @@ def evaluate_top_candidate(
         match_score=match_score,
         incentive=incentive,
         contact_history=contact_history,
-        business_policy=BUSINESS_POLICY,
+        business_policy=business_policy,
     )
     should_call = bool(outreach_decision.get("should_call"))
     reason = outreach_decision.get("reason", "")

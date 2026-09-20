@@ -22,6 +22,7 @@ from app.agents.mock_store import RECOVERY_PLANS, new_plan_id
 from app.agents.nemotron.ranker import rank_candidates
 from app.db.models.appointment import Appointment
 from app.db.session import SessionLocal
+from app.services.business_profile_service import get_recovery_rules
 from app.services.outreach_service import evaluate_top_candidate
 from app.services.recovery_matcher import find_candidates
 from app.services.recovery_service import (
@@ -113,7 +114,8 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     # to resolve: it can rank nobody, or name a patient that is not in the
     # eligible set. Unguarded, that raised IndexError/StopIteration and left
     # the slot cancelled with no outreach and nothing recorded to say why.
-    ranked_ids = ranking.get("ranked_candidate_ids") or []
+    max_attempts = get_recovery_rules(db)["max_recovery_attempts"]
+    ranked_ids = (ranking.get("ranked_candidate_ids") or [])[:max_attempts]
     top_candidate = None
     top_score = None
     if ranked_ids:

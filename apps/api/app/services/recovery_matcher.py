@@ -14,14 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models.preference import PreferenceRecord
+from app.services.business_profile_service import get_time_of_day_ranges
+from app.core.business_hours import time_of_day_for_hour
 
 _WEEKDAY = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-
-
-def _time_range(hour: int) -> str:
-    if hour < 12:
-        return "morning"
-    return "afternoon" if hour < 17 else "evening"
 
 
 def _excluded(record: PreferenceRecord, slot_start: datetime.datetime, provider: str) -> str | None:
@@ -65,6 +61,7 @@ def find_candidates(
             .order_by(PreferenceRecord.created_at.desc())
         ).scalars()
     )
+    time_ranges = get_time_of_day_ranges(db)
 
     # One intent per patient: their most recent wins.
     latest: dict[str, PreferenceRecord] = {}
@@ -87,7 +84,7 @@ def find_candidates(
                 "soft_preferences": soft,
                 "earlier_if_possible": bool((record.raw_extraction or {}).get("earlier_if_possible")),
                 "requested_time": record.requested_time,
-                "slot_time_range": _time_range(slot_start.hour),
+                "slot_time_range": time_of_day_for_hour(slot_start.hour, time_ranges),
                 "expires": record.expiry,
                 "said": record.raw_text,
                 "last_contacted_days_ago": None,

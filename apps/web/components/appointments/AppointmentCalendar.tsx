@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { fetchAppointments, fetchMetrics, fetchRecoveryPlanBySlot, type ApiAppointment, type DashboardMetrics, type RecoveryPlan } from "@/lib/api";
+import { useBusinessProfile } from "@/lib/useBusinessProfile";
 import { RecoveryPanel } from "@/components/recovery/RecoveryPanel";
-import { addDays, dateLabel, minutes, providers, sampleAppointments, timeLabel, validAppointment, visitTypes, weekStart, type Appointment } from "./appointment-data";
+import { addDays, dateLabel, DEFAULT_CLOSE_HOUR, DEFAULT_OPEN_HOUR, minutes, providers, sampleAppointments, timeLabel, validAppointment, visitTypes, weekStart, type Appointment } from "./appointment-data";
 import styles from "./AppointmentCalendar.module.css";
 
-const hours = Array.from({ length: 12 }, (_, index) => index + 8);
 // Simplest reliable live-demo mechanism: short-interval refetching. No
 // realtime transport exists in this stack, so this is the polling window
 // PASS criteria asks for rather than WebSockets.
@@ -67,7 +67,7 @@ function fromApi(row: ApiAppointment): Appointment & { serverId: number } {
   return {
     id: `slot-${row.id}`,
     serverId: row.id,
-    patient: row.status === "booked" ? "Booked patient" : "Open slot",
+    patient: row.status === "booked" ? "Booked" : "Open slot",
     provider: row.provider,
     visitType: row.service,
     date,
@@ -94,6 +94,17 @@ function arrange(events: Appointment[]) {
 }
 
 export function AppointmentCalendar() {
+  const profile = useBusinessProfile();
+  const workerLabel = profile?.worker_label ?? "Provider";
+  const customerLabel = profile?.customer_label ?? "Patient";
+  const activeProviders = profile?.workers.filter((w) => w.active).map((w) => w.name) ?? [];
+  const activeServices = profile?.services.map((s) => s.name) ?? [];
+  const providerOptions: readonly string[] = activeProviders.length ? activeProviders : providers;
+  const serviceOptions: readonly string[] = activeServices.length ? activeServices : visitTypes;
+  const openHour = profile ? Number(profile.open_time.split(":")[0]) : DEFAULT_OPEN_HOUR;
+  const closeHour = profile ? Number(profile.close_time.split(":")[0]) : DEFAULT_CLOSE_HOUR;
+  const hours = Array.from({ length: Math.max(1, closeHour - openHour) }, (_, index) => index + openHour);
+
   const [today, setToday] = useState("");
   const [week, setWeek] = useState("");
   const [events, setEvents] = useState<Appointment[]>([]);
@@ -188,7 +199,7 @@ export function AppointmentCalendar() {
   function edit(event?: Appointment, date = today, time = "09:00") {
     setError("");
     setConfirmDelete(false);
-    setDraft(event ?? { id: "", patient: "", date, time, duration: 60, provider: provider === "all" ? providers[0] : provider, visitType: visitTypes[0], status: "booked" });
+    setDraft(event ?? { id: "", patient: "", date, time, duration: 60, provider: provider === "all" ? providerOptions[0] : provider, visitType: serviceOptions[0], status: "booked" });
   }
   function closeEditor() {
     dialog.current?.close();
@@ -210,15 +221,15 @@ export function AppointmentCalendar() {
         ? "cancelled"
         : String(data.get("status")) as Appointment["status"],
     };
-    if (!validAppointment(appointment)) {
-      setError("Add a patient name and a valid appointment between 8 AM and 6 PM. Visits must last 15–180 minutes and end by 6 PM.");
+    if (!validAppointment(appointment, providerOptions, serviceOptions, openHour, closeHour)) {
+      setError(`Add a ${customerLabel.toLowerCase()} name and a valid appointment between ${timeLabel(`${openHour}:00`)} and ${timeLabel(`${closeHour}:00`)}. Visits must last 15–180 minutes.`);
       return;
     }
     setEvents((current) => draft.id ? current.map((item) => item.id === draft.id ? appointment : item) : [...current, appointment]);
     setWeek(weekStart(appointment.date));
     setProvider("all");
     setNotice(appointment.status === "cancelled"
-      ? `${appointment.patient}’s appointment is cancelled. Find matching patients in the open slots section above the calendar.`
+      ? `${appointment.patient}’s appointment is cancelled. Find matching ${customerLabel.toLowerCase()}s in the open slots section above the calendar.`
       : `${appointment.patient}’s appointment ${draft.id ? "updated" : "added"}. Changes are saved in this preview only.`);
     closeEditor();
   }
@@ -235,8 +246,9 @@ export function AppointmentCalendar() {
     try {
       if (file.size > 500_000) throw new Error("Choose a JSON file smaller than 500 KB.");
       const data: unknown = JSON.parse(await file.text());
-      if (!Array.isArray(data) || data.length < 1 || data.length > 100 || !data.every(validAppointment)) {
-        throw new Error("Use the sample format with 1–100 valid appointments, listed providers and visit types, and visits between 8 AM and 6 PM.");
+      if (!Array.isArray(data) || data.length < 1 || data.length > 100
+        || !data.every((item) => validAppointment(item, providerOptions, serviceOptions, openHour, closeHour))) {
+        throw new Error(`Use the sample format with 1–100 valid appointments, listed ${workerLabel.toLowerCase()}s and services, within business hours.`);
       }
       const imported = data.map((item) => ({ ...item, id: crypto.randomUUID() }));
       setEvents((current) => [...current, ...imported]);
@@ -254,7 +266,7 @@ export function AppointmentCalendar() {
   const visible = events.filter((event) => days.includes(event.date) && (provider === "all" || provider === event.provider));
   const openings = visible.filter((event) => event.status === "cancelled");
   const recoveryAppointment = events.find((event) => event.id === recoveryId && event.status === "cancelled");
-  const sample = JSON.stringify([{ patient: "Alex Morgan", provider: "Dr. Lee", visitType: "Follow-up", date: today, time: "10:00", duration: 60, status: "booked" }], null, 2);
+  const sample = JSON.stringify([{ patient: "Alex Morgan", provider: providerOptions[0], visitType: serviceOptions[0], date: today, time: `${String(openHour).padStart(2, "0")}:00`, duration: 60, status: "booked" }], null, 2);
 
   // Real numbers only - "—" rather than a guess when /api/appointments/metrics
   // is unreachable. Fill rate is derived client-side from the same two counts
@@ -271,9 +283,9 @@ export function AppointmentCalendar() {
     ? `${activeRecoveries.length} slot${activeRecoveries.length === 1 ? "" : "s"} in autonomous recovery • ${stageLabel(recoveryPlans[serverIdOf(activeRecoveries[0])!])}`
     : metrics
       ? metrics.open_slots > 0
-        ? `${metrics.open_slots} open ${metrics.open_slots === 1 ? "slot" : "slots"} detected • ${metrics.patients_waiting} ${metrics.patients_waiting === 1 ? "patient" : "patients"} waiting to be matched`
-        : `All slots filled • ${metrics.patients_waiting} ${metrics.patients_waiting === 1 ? "patient" : "patients"} on the waiting list`
-      : `${openings.length} open ${openings.length === 1 ? "slot" : "slots"} in this view • patient-matching data unavailable`;
+        ? `${metrics.open_slots} open ${metrics.open_slots === 1 ? "slot" : "slots"} detected • ${metrics.patients_waiting} ${customerLabel.toLowerCase()}${metrics.patients_waiting === 1 ? "" : "s"} waiting to be matched`
+        : `All slots filled • ${metrics.patients_waiting} ${customerLabel.toLowerCase()}${metrics.patients_waiting === 1 ? "" : "s"} on the waiting list`
+      : `${openings.length} open ${openings.length === 1 ? "slot" : "slots"} in this view • matching data unavailable`;
 
   return (
     <div className={styles.page}>
@@ -302,7 +314,7 @@ export function AppointmentCalendar() {
         <div className={styles.openSlotsList}>{openings.map((slot) => <div key={slot.id} className={styles.openSlot}>
           <span>{dateLabel(slot.date, { weekday: "short", month: "short", day: "numeric" })} · {timeLabel(slot.time)}</span>
           <em>{slot.visitType} · {slot.provider} · cancelled by {slot.patient}{serverIdOf(slot) !== undefined ? ` · ${stageLabel(recoveryPlans[serverIdOf(slot)!])}` : ""}</em>
-          <button type="button" className={styles.secondary} onClick={() => setRecoveryId(slot.id)} aria-label={`Find matching patients for ${slot.patient}’s cancelled appointment`}>Find matches →</button>
+          <button type="button" className={styles.secondary} onClick={() => setRecoveryId(slot.id)} aria-label={`Find matching ${customerLabel.toLowerCase()}s for ${slot.patient}’s cancelled appointment`}>Find matches →</button>
         </div>)}</div>
       </section>}
       {recoveryAppointment && <RecoveryPanel key={recoveryAppointment.id} appointment={recoveryAppointment} slotId={(recoveryAppointment as Appointment & { serverId?: number }).serverId} onClose={() => setRecoveryId(null)} />}
@@ -314,9 +326,9 @@ export function AppointmentCalendar() {
             <button className={styles.arrow} aria-label="Next week" onClick={() => setWeek(addDays(week, 7))}>›</button>
             <h2 aria-live="polite">{dateLabel(week, { month: "short", day: "numeric" })} – {dateLabel(days[6], { month: "short", day: "numeric", year: "numeric" })}</h2>
           </div>
-          <label className={styles.filter}><span className="sr-only">Filter by provider</span><select aria-label="Filter by provider" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="all">All providers</option>{providers.map((name) => <option key={name}>{name}</option>)}</select><span className={styles.weekBadge}>Week view</span></label>
+          <label className={styles.filter}><span className="sr-only">Filter by {workerLabel.toLowerCase()}</span><select aria-label={`Filter by ${workerLabel.toLowerCase()}`} value={provider} onChange={(event) => setProvider(event.target.value)}><option value="all">All {workerLabel.toLowerCase()}s</option>{providerOptions.map((name) => <option key={name}>{name}</option>)}</select><span className={styles.weekBadge}>Week view</span></label>
         </div>
-        <div className={styles.calendarMeta}><span>{visible.filter((event) => event.status === "booked").length} booked · {visible.filter((event) => event.status === "cancelled").length} open</span><span>Local time · 8 AM–6 PM</span></div>
+        <div className={styles.calendarMeta}><span>{visible.filter((event) => event.status === "booked").length} booked · {visible.filter((event) => event.status === "cancelled").length} open</span><span>Local time · {timeLabel(`${openHour}:00`)}–{timeLabel(`${closeHour}:00`)}</span></div>
         <div className={styles.scroll} tabIndex={0} role="region" aria-label="Calendar. Scroll horizontally on smaller screens.">
           <div className={styles.weekGrid}>
             <div className={styles.dayHeaders}><div className={styles.timeHeading}><Icon name="calendar" /></div>{days.map((day) => <div key={day} className={`${styles.dayHeading} ${day === today ? styles.today : ""}`}><span>{dateLabel(day, { weekday: "short" })}</span><strong>{dateLabel(day, { day: "numeric" })}</strong>{day === today && <span className="sr-only">Today</span>}</div>)}</div>
@@ -324,7 +336,7 @@ export function AppointmentCalendar() {
               <div className={styles.timeColumn}>{hours.map((hour) => <div key={hour}>{timeLabel(`${hour}:00`).replace(":00", "")}</div>)}</div>
               {days.map((day) => <div key={day} className={`${styles.dayColumn} ${day === today ? styles.todayColumn : ""}`}>
                 {hours.map((hour) => <button key={hour} className={styles.slot} aria-label={`Add appointment on ${dateLabel(day, { weekday: "long", month: "long", day: "numeric" })} at ${timeLabel(`${hour}:00`)}`} onClick={() => edit(undefined, day, `${String(hour).padStart(2, "0")}:00`)} />)}
-                {arrange(visible.filter((event) => event.date === day)).map(({ event, lane, lanes }) => <button key={event.id} className={`${styles.event} ${event.status === "cancelled" ? styles.cancelled : styles.booked}`} style={{ top: (minutes(event.time) - 480) * 1.2, height: Math.max(event.duration * 1.2 - 4, 16), left: `calc(${lane / lanes * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)` }} onClick={() => edit(event)} aria-label={`${event.patient}, ${event.visitType}, ${event.provider}, ${timeLabel(event.time)}, ${event.status}. Edit appointment`} title={`${event.patient} · ${event.provider} · ${timeLabel(event.time)} · ${event.duration} min · ${event.status}`}>
+                {arrange(visible.filter((event) => event.date === day)).map(({ event, lane, lanes }) => <button key={event.id} className={`${styles.event} ${event.status === "cancelled" ? styles.cancelled : styles.booked}`} style={{ top: (minutes(event.time) - openHour * 60) * 1.2, height: Math.max(event.duration * 1.2 - 4, 16), left: `calc(${lane / lanes * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)` }} onClick={() => edit(event)} aria-label={`${event.patient}, ${event.visitType}, ${event.provider}, ${timeLabel(event.time)}, ${event.status}. Edit appointment`} title={`${event.patient} · ${event.provider} · ${timeLabel(event.time)} · ${event.duration} min · ${event.status}`}>
                   <strong>{event.patient}</strong>{event.duration >= 30 && <span>{event.visitType}</span>}{event.duration >= 45 && <span>{timeLabel(event.time)} · {event.duration} min</span>}{event.duration >= 60 && <span className={styles.eventProvider}>{event.status === "cancelled" ? (serverIdOf(event) !== undefined ? shortStageLabel(recoveryPlans[serverIdOf(event)!]) : "Open") : event.provider}</span>}
                 </button>)}
               </div>)}
@@ -338,11 +350,11 @@ export function AppointmentCalendar() {
 
       <dialog ref={dialog} className={styles.dialog} aria-labelledby="appointment-title" onClose={() => setDraft(null)}>
         {draft && <form onSubmit={save} key={draft.id || `${draft.date}-${draft.time}`}>
-          <div className={styles.modalHeader}><div><p className="eyebrow">YOUR CLINIC SCHEDULE</p><h2 id="appointment-title">{draft.id ? "Edit appointment" : "New appointment"}</h2></div><button type="button" className={styles.arrow} aria-label="Close appointment editor" onClick={closeEditor}>×</button></div>
-          <p className={styles.modalNote}>Sample data only. This won’t book or contact a patient.</p>
-          <label className={styles.field}>Patient name<input name="patient" defaultValue={draft.patient} required maxLength={100} placeholder="e.g. Alex Morgan" autoFocus /></label>
-          <div className={styles.fields}><label className={styles.field}>Provider<select aria-label="Provider" name="provider" defaultValue={draft.provider}>{providers.map((name) => <option key={name}>{name}</option>)}</select></label><label className={styles.field}>Visit type<select aria-label="Visit type" name="visitType" defaultValue={draft.visitType}>{visitTypes.map((name) => <option key={name}>{name}</option>)}</select></label></div>
-          <div className={styles.fields}><label className={styles.field}>Date<input type="date" name="date" defaultValue={draft.date} required /></label><label className={styles.field}>Start time<input type="time" name="time" min="08:00" max="17:45" defaultValue={draft.time} required /></label></div>
+          <div className={styles.modalHeader}><div><p className="eyebrow">YOUR SCHEDULE</p><h2 id="appointment-title">{draft.id ? "Edit appointment" : "New appointment"}</h2></div><button type="button" className={styles.arrow} aria-label="Close appointment editor" onClick={closeEditor}>×</button></div>
+          <p className={styles.modalNote}>Sample data only. This won’t book or contact a {customerLabel.toLowerCase()}.</p>
+          <label className={styles.field}>{customerLabel} name<input name="patient" defaultValue={draft.patient} required maxLength={100} placeholder="e.g. Alex Morgan" autoFocus /></label>
+          <div className={styles.fields}><label className={styles.field}>{workerLabel}<select aria-label={workerLabel} name="provider" defaultValue={draft.provider}>{providerOptions.map((name) => <option key={name}>{name}</option>)}</select></label><label className={styles.field}>Service<select aria-label="Service" name="visitType" defaultValue={draft.visitType}>{serviceOptions.map((name) => <option key={name}>{name}</option>)}</select></label></div>
+          <div className={styles.fields}><label className={styles.field}>Date<input type="date" name="date" defaultValue={draft.date} required /></label><label className={styles.field}>Start time<input type="time" name="time" min={`${String(openHour).padStart(2, "0")}:00`} max={`${String(closeHour - 1).padStart(2, "0")}:45`} defaultValue={draft.time} required /></label></div>
           <div className={styles.fields}><label className={styles.field}>Duration (minutes)<input name="duration" type="number" min="15" max="180" step="1" defaultValue={draft.duration} required /></label><label className={styles.field}>Status<select aria-label="Status" name="status" defaultValue={draft.status}><option value="booked">Booked</option><option value="cancelled">Cancelled</option></select></label></div>
           {error && <p className={styles.error} role="alert">{error}</p>}
           {confirmDelete ? <div key="delete-confirmation" className={styles.deleteConfirmation}><p>Delete this appointment from the preview?</p><button type="button" className={styles.danger} onClick={remove}>Confirm delete</button><button type="button" className={styles.secondary} onClick={(event) => { event.preventDefault(); setConfirmDelete(false); }}>Keep appointment</button></div> : <div key="editor-actions" className={styles.modalActions}>{draft.id && <button type="button" className={styles.delete} onClick={() => setConfirmDelete(true)}>Delete appointment</button>}<button type="button" className={styles.secondary} onClick={closeEditor}>Cancel</button>{draft.id && draft.status === "booked" && <button type="submit" name="intent" value="cancel-appointment" className={styles.secondary}>Cancel appointment</button>}<button type="submit" className={styles.primary}>Save appointment</button></div>}
@@ -350,7 +362,7 @@ export function AppointmentCalendar() {
       </dialog>
       <dialog ref={importDialog} className={styles.dialog} aria-labelledby="import-title">
         <form onSubmit={importEvents}><div className={styles.modalHeader}><h2 id="import-title">Import appointments</h2><button type="button" className={styles.arrow} aria-label="Close import" onClick={() => importDialog.current?.close()}>×</button></div>
-          <p className={styles.modalNote}>Add up to 100 appointments from a JSON file to this local preview. Nothing is uploaded or saved to your clinic’s system.</p>
+          <p className={styles.modalNote}>Add up to 100 appointments from a JSON file to this local preview. Nothing is uploaded or saved to your business’s system.</p>
           <a className={styles.download} href={`data:application/json;charset=utf-8,${encodeURIComponent(sample)}`} download="slotsaver-sample-appointments.json">Download sample JSON</a>
           <label className={styles.field}>Appointment file<input ref={fileInput} type="file" accept=".json,application/json" required onChange={() => setImportError("")} /></label>
           {importError && <p className={styles.error} role="alert">{importError}</p>}

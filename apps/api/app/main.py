@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import (
     appointments,
     benchmark,
+    business_profile,
     disruptions,
     execution,
     health,
@@ -22,7 +23,8 @@ from app.api.routes import (
 )
 from app.db import models  # noqa: F401 - registers tables on Base before create_all
 from app.db.migrate import ensure_columns
-from app.db.session import Base, engine
+from app.db.session import Base, SessionLocal, engine
+from app.db.seed_business_profiles import seed_business_profiles
 from app.services.recovery_scheduler import run_forever as run_recovery_scheduler
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,13 @@ Base.metadata.create_all(bind=engine)
 # create_all skips tables that already exist, so columns added later need this.
 for _added in ensure_columns(engine):
     print(f"[db] added missing column {_added}")
+
+# The app assumes an active business profile always exists (appointment_service,
+# recovery_matcher, recovery_scheduler, outreach_service all read one). Seeding
+# only when the table is empty means this never overwrites a profile someone
+# configured through the settings page.
+with SessionLocal() as _seed_db:
+    seed_business_profiles(_seed_db)
 
 
 @asynccontextmanager
@@ -72,6 +81,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(business_profile.router)
 app.include_router(appointments.router)
 app.include_router(disruptions.router)
 app.include_router(preferences.router)

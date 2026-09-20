@@ -19,11 +19,25 @@ from unittest.mock import patch
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.core.business_policy import BUSINESS_POLICY
 from app.db.models.appointment import Appointment
 from app.db.models.recovery import RecoveryPlanRecord
 from app.db.session import Base
 from app.services.recovery_service import apply_incentive_decision, record_candidate_response
+
+# Same shape business_profile_service.get_business_policy resolves from the
+# active profile's incentive_policy column - this test exercises the state
+# machine directly, so it supplies the policy dict rather than a DB session.
+BUSINESS_POLICY = {
+    "max_discount_percent": 20,
+    "minimum_revenue": 60,
+    "allowed_incentives": [
+        {"id": "10_percent_discount", "type": "percent_discount", "value": 10},
+        {"id": "future_credit_10", "type": "fixed_credit", "value": 10},
+        {"id": "referral_offer_15", "type": "referral_offer", "value": 15},
+    ],
+    "incentive_time_threshold_hours": 24,
+    "excluded_services": ["cosmetic_consult"],
+}
 
 FAKE_INCENTIVE_DECISION = {
     "decision": "offer_incentive",

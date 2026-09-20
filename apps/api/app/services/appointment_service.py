@@ -11,15 +11,9 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.db.models.appointment import Appointment
+from app.services.business_profile_service import get_booking_rules, get_time_of_day_ranges
 
 TimeOfDay = Literal["morning", "afternoon", "evening"]
-
-# [inclusive_hour, exclusive_hour)
-_TIME_OF_DAY_RANGES: dict[str, tuple[int, int]] = {
-    "morning": (8, 12),
-    "afternoon": (12, 17),
-    "evening": (17, 21),
-}
 
 
 def get_available_slots(
@@ -44,8 +38,16 @@ def get_available_slots(
     results = list(db.execute(stmt).scalars().all())
 
     if time_of_day:
-        lo, hi = _TIME_OF_DAY_RANGES[time_of_day]
+        lo, hi = get_time_of_day_ranges(db)[time_of_day]
         results = [a for a in results if lo <= a.start_time.hour < hi]
+
+    rules = get_booking_rules(db)
+    now = datetime.datetime.now()
+    earliest = now + datetime.timedelta(minutes=rules["min_notice_minutes"])
+    latest = now + datetime.timedelta(days=rules["max_horizon_days"])
+    results = [a for a in results if earliest <= a.start_time <= latest]
+    if not rules["same_day_allowed"]:
+        results = [a for a in results if a.start_time.date() != now.date()]
 
     return results
 

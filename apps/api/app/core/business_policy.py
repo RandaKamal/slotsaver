@@ -1,17 +1,15 @@
-"""The clinic's incentive policy - what Nemotron's incentive decision (see
-app/agents/nemotron/incentive.py) is allowed to choose from, and what
-recovery_service's deterministic backstop checks it against. A config
-constant, not demo state, so it lives here rather than in mock_store.
+"""The active business's incentive policy - what Nemotron's incentive
+decision (see app/agents/nemotron/incentive.py) is allowed to choose from,
+and what recovery_service's deterministic backstop checks it against.
+
+This used to be a single hardcoded module-level dict. It now lives on the
+active BusinessProfile row (app/db/models/business_profile.py) so a dental
+clinic, a tutoring center and a barber shop can each run their own policy
+without a code change; `get_business_policy` is a thin re-export so existing
+callers (recovery.py, recovery_scheduler.py, outreach_service.py) only need
+to pass in a DB session, same as before.
 """
 
-BUSINESS_POLICY: dict = {
-    "max_discount_percent": 20,
-    "minimum_revenue": 60,
-    "allowed_incentives": [
-        {"id": "10_percent_discount", "type": "percent_discount", "value": 10},
-        {"id": "future_credit_10", "type": "fixed_credit", "value": 10},
-        {"id": "referral_offer_15", "type": "referral_offer", "value": 15},
-    ],
-    "incentive_time_threshold_hours": 24,
-    "excluded_services": ["cosmetic_consult"],
-}
+from app.services.business_profile_service import get_business_policy
+
+__all__ = ["get_business_policy"]

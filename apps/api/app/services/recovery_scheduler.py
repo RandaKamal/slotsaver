@@ -10,10 +10,10 @@ built and already use from real request paths:
    pipeline the dashboard button and the voice-agent background task use.
    run_recovery() is itself idempotent, so calling it every tick for a slot
    that already has a plan is a cheap no-op, not a re-rank.
-2. A pending plan whose current offer has been outstanding longer than
-   OFFER_TIMEOUT_SECONDS with no response gets record_candidate_response(...,
-   "timeout") - a real timeout window that actually elapses, never a
-   fabricated decline/accept.
+2. A pending plan whose current offer has been outstanding longer than the
+   active profile's recovery_rules.candidate_timeout_seconds with no response
+   gets record_candidate_response(..., "timeout") - a real timeout window
+   that actually elapses, never a fabricated decline/accept.
 3. A plan that just exhausted its queue at full price gets
    apply_incentive_decision() exactly once, guarded by stage still being
    "NORMAL" (that call itself flips stage to "INCENTIVE", so it naturally
@@ -33,17 +33,19 @@ import os
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.business_policy import BUSINESS_POLICY
+from app.core.business_policy import get_business_policy
 from app.db.models.appointment import Appointment
 from app.db.models.recovery import RecoveryPlanRecord
 from app.db.session import SessionLocal
+from app.services.business_profile_service import get_recovery_rules
 from app.services.recovery_service import apply_incentive_decision, record_candidate_response
 from app.services.slot_recovery import run_recovery
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = float(os.getenv("RECOVERY_POLL_INTERVAL_SECONDS", "3"))
-OFFER_TIMEOUT_SECONDS = float(os.getenv("RECOVERY_OFFER_TIMEOUT_SECONDS", "25"))
+# The offer timeout itself now comes from the active profile's
+# recovery_rules.candidate_timeout_seconds (business_profile_service.py).
 
 
 def _utcnow() -> datetime.datetime:
@@ -70,7 +72,7 @@ def _plan_new_cancellations(db: Session) -> None:
             logger.exception("autonomous run_recovery failed for slot %s", appt.id)
 
 
-def _advance_timed_out_offers(db: Session) -> None:
+def _advance_timed_out_offers(db: Session, timeout_seconds: float) -> None:
     pending = db.execute(
         select(RecoveryPlanRecord)
         .where(RecoveryPlanRecord.status == "pending")
@@ -79,7 +81,7 @@ def _advance_timed_out_offers(db: Session) -> None:
     now = _utcnow()
     for plan in pending:
         offered_at = _as_utc(plan.current_offer_at)
-        if (now - offered_at).total_seconds() >= OFFER_TIMEOUT_SECONDS:
+        if (now - offered_at).total_seconds() >= timeout_seconds:
             try:
                 record_candidate_response(db, plan.plan_id, "timeout")
             except Exception:
@@ -94,7 +96,7 @@ def _apply_incentive_where_exhausted(db: Session) -> None:
     ).scalars().all()
     for plan in exhausted:
         try:
-            apply_incentive_decision(db, plan.plan_id, BUSINESS_POLICY)
+            apply_incentive_decision(db, plan.plan_id, get_business_policy(db))
         except Exception:
             logger.exception("autonomous incentive decision failed for plan %s", plan.plan_id)
 
@@ -103,9 +105,13 @@ def tick() -> None:
     """One full pass of all three jobs. Own session; never raises."""
     db = SessionLocal()
     try:
+        rules = get_recovery_rules(db)
+        if not rules["auto_recovery_enabled"]:
+            return
         _plan_new_cancellations(db)
-        _advance_timed_out_offers(db)
-        _apply_incentive_where_exhausted(db)
+        _advance_timed_out_offers(db, rules["candidate_timeout_seconds"])
+        if rules["incentive_fallback_enabled"]:
+            _apply_incentive_where_exhausted(db)
     except Exception:
         logger.exception("recovery scheduler tick failed")
     finally:
@@ -117,8 +123,8 @@ async def run_forever() -> None:
     HTTP calls that take several seconds, and must not stall the event loop
     (and therefore every other request) while doing so."""
     logger.info(
-        "recovery scheduler started (poll=%ss, offer_timeout=%ss)",
-        POLL_INTERVAL_SECONDS, OFFER_TIMEOUT_SECONDS,
+        "recovery scheduler started (poll=%ss; offer timeout is per-business-profile)",
+        POLL_INTERVAL_SECONDS,
     )
     while True:
         try:

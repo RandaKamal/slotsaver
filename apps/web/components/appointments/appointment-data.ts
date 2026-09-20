@@ -1,5 +1,11 @@
+// Fallback values only, used before the active business profile has loaded
+// or if the profile fetch fails - the live provider/service lists and hours
+// come from the active BusinessProfile (see lib/useBusinessProfile.ts).
 export const providers = ["Dr. Lee", "Dr. Patel", "Dr. Rivera"] as const;
 export const visitTypes = ["Follow-up", "Consultation", "Check-up"] as const;
+export const DEFAULT_OPEN_HOUR = 8;
+export const DEFAULT_CLOSE_HOUR = 20;
+
 export interface Appointment {
   id: string;
   patient: string;
@@ -30,7 +36,7 @@ export function timeLabel(time: string) {
 export function dateLabel(date: string, options: Intl.DateTimeFormatOptions) {
   return new Intl.DateTimeFormat("en-US", { ...options, timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
 }
-export function sampleAppointments(today: string): Appointment[] {
+export function sampleAppointments(today: string, providerList: readonly string[] = providers, serviceList: readonly string[] = visitTypes): Appointment[] {
   const monday = weekStart(today);
   return [
     ["Emma Wilson", 0, "09:00", 60, 0, 0],
@@ -41,19 +47,36 @@ export function sampleAppointments(today: string): Appointment[] {
     ["James Brown", 3, "11:00", 60, 2, 1],
     ["Mia Thompson", 4, "10:00", 60, 0, 0],
     ["Ethan Brooks", 4, "14:00", 60, 1, 2],
-  ].map((row, index) => ({ id: `sample-${index}`, patient: String(row[0]), date: addDays(monday, Number(row[1])), time: String(row[2]), duration: Number(row[3]), provider: providers[Number(row[4])], visitType: visitTypes[Number(row[5])], status: index === 4 ? "cancelled" : "booked" }));
+  ].map((row, index) => ({
+    id: `sample-${index}`,
+    patient: String(row[0]),
+    date: addDays(monday, Number(row[1])),
+    time: String(row[2]),
+    duration: Number(row[3]),
+    provider: providerList[Number(row[4]) % providerList.length],
+    visitType: serviceList[Number(row[5]) % serviceList.length],
+    status: index === 4 ? "cancelled" : "booked",
+  }));
 }
 // Local UI format only; deliberately separate from the future backend contract.
-export function validAppointment(value: unknown): value is Appointment {
+export function validAppointment(
+  value: unknown,
+  providerList: readonly string[] = providers,
+  serviceList: readonly string[] = visitTypes,
+  openHour: number = DEFAULT_OPEN_HOUR,
+  closeHour: number = DEFAULT_CLOSE_HOUR,
+): value is Appointment {
   if (!value || typeof value !== "object") return false;
   const a = value as Appointment;
+  if (!(typeof a.time === "string" && /^\d{2}:\d{2}$/.test(a.time))) return false;
+  const startHour = Number(a.time.split(":")[0]);
   return typeof a.patient === "string" && !!a.patient.trim() && a.patient.length <= 100
-    && providers.includes(a.provider as typeof providers[number])
-    && visitTypes.includes(a.visitType as typeof visitTypes[number])
+    && providerList.includes(a.provider)
+    && serviceList.includes(a.visitType)
     && typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date)
     && !Number.isNaN(Date.parse(a.date)) && new Date(a.date).toISOString().slice(0, 10) === a.date
-    && typeof a.time === "string" && /^(0[89]|1[0-7]):[0-5]\d$/.test(a.time)
+    && startHour >= openHour && startHour < closeHour
     && Number.isInteger(a.duration) && a.duration >= 15 && a.duration <= 180
-    && minutes(a.time) + a.duration <= 18 * 60
+    && minutes(a.time) + a.duration <= closeHour * 60
     && (a.status === "booked" || a.status === "cancelled");
 }

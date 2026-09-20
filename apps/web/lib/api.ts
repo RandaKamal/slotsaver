@@ -140,3 +140,103 @@ async function decide(id: number, action: "approve" | "reject"): Promise<Outreac
 
 export const approveOutreach = (id: number) => decide(id, "approve");
 export const rejectOutreach = (id: number) => decide(id, "reject");
+
+// --- Business profile ---------------------------------------------------------
+
+export interface BusinessProfileSummary {
+  id: number;
+  slug: string;
+  name: string;
+  business_type: string;
+  active: boolean;
+}
+
+export interface Worker {
+  id: string;
+  name: string;
+  role: string;
+  service_ids: string[];
+  working_days: string[];
+  start_time: string;
+  end_time: string;
+  breaks: { start: string; end: string }[];
+  active: boolean;
+}
+
+export interface ServiceOffering {
+  id: string;
+  name: string;
+  duration_minutes: number;
+  price: number;
+  eligible_roles: string[];
+  buffer_minutes: number;
+  allow_provider_preference: boolean;
+}
+
+export interface BookingRules {
+  min_notice_minutes: number;
+  max_horizon_days: number;
+  same_day_allowed: boolean;
+  customer_can_choose_provider: boolean;
+  provider_flexibility_allowed: boolean;
+}
+
+export interface RecoveryRules {
+  auto_recovery_enabled: boolean;
+  candidate_timeout_seconds: number;
+  max_recovery_attempts: number;
+  incentive_fallback_enabled: boolean;
+}
+
+export interface IncentivePolicy {
+  max_discount_percent: number;
+  minimum_revenue: number;
+  allowed_incentives: { id: string; type: string; value: number }[];
+  incentive_time_threshold_hours: number;
+  excluded_services: string[];
+  incentive_score_threshold: number;
+}
+
+export interface BusinessProfile extends BusinessProfileSummary {
+  timezone: string;
+  location: string;
+  worker_label: string;
+  customer_label: string;
+  service_label: string;
+  working_days: string[];
+  open_time: string;
+  close_time: string;
+  workers: Worker[];
+  services: ServiceOffering[];
+  booking_rules: BookingRules;
+  recovery_rules: RecoveryRules;
+  incentive_policy: IncentivePolicy;
+}
+
+export function fetchBusinessProfiles(signal?: AbortSignal): Promise<BusinessProfileSummary[]> {
+  return getJson<BusinessProfileSummary[]>("/api/business-profiles", signal);
+}
+
+export function fetchActiveBusinessProfile(signal?: AbortSignal): Promise<BusinessProfile> {
+  return getJson<BusinessProfile>("/api/business-profiles/active", signal);
+}
+
+export function fetchBusinessProfile(id: number, signal?: AbortSignal): Promise<BusinessProfile> {
+  return getJson<BusinessProfile>(`/api/business-profiles/${id}`, signal);
+}
+
+export async function activateBusinessProfile(id: number): Promise<BusinessProfile> {
+  const res = await fetch(`${API_URL}/api/business-profiles/${id}/activate`, { method: "POST" });
+  if (!res.ok) throw new Error(`activate profile failed: ${res.status}`);
+  return res.json() as Promise<BusinessProfile>;
+}
+
+export async function updateBusinessProfile(id: number, patch: Partial<BusinessProfile>): Promise<BusinessProfile> {
+  const res = await fetch(`${API_URL}/api/business-profiles/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`update profile failed: ${res.status}`);
+  return res.json() as Promise<BusinessProfile>;
+}

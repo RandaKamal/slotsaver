@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.mock_store import PATIENTS, RECOVERY_PLANS, new_plan_id
 from app.agents.nemotron.ranker import rank_candidates
-from app.core.business_policy import BUSINESS_POLICY
+from app.core.business_policy import get_business_policy
 from app.db.models.appointment import Appointment
 from app.db.session import get_db
 from app.services.appointment_service import cancel_appointment
@@ -116,7 +116,7 @@ def apply_incentive(plan_id: str, db: Session = Depends(get_db)) -> dict:
     decline (advances to the next ranked candidate) exactly as in the normal
     queue - nothing new to reimplement there.
     """
-    plan = apply_incentive_decision(db, plan_id, BUSINESS_POLICY)
+    plan = apply_incentive_decision(db, plan_id, get_business_policy(db))
     if plan_id in RECOVERY_PLANS:
         RECOVERY_PLANS[plan_id] = plan
     return plan

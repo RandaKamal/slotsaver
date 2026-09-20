@@ -1,0 +1,31 @@
+.page { padding: 40px 44px; max-width: 980px; margin: 0 auto; }
+.header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+.header h1 { font-size: clamp(24px, 2.4vw, 32px); font-weight: 600; letter-spacing: -1px; margin: 10px 0; }
+.subtitle { color: var(--muted); font-size: 14px; margin: 0 0 28px; }
+
+.switcher { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 32px; padding: 14px 16px; background: white; border: 1px solid var(--border); border-radius: 12px; }
+.switcher span { font-size: 12px; color: var(--muted); font-weight: 600; }
+.profileChip { border: 1px solid var(--border); background: #f8fafc; color: var(--navy); border-radius: 999px; padding: 7px 14px; font-size: 12px; cursor: pointer; }
+.profileChip.active { background: var(--blue); border-color: #1f61d1; color: white; font-weight: 600; }
+
+.section { background: white; border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; margin-bottom: 20px; }
+.section h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+.sectionHint { font-size: 12px; color: var(--muted); margin: 0 0 16px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: #46586e; }
+.field input, .field select { font: inherit; font-weight: 400; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--navy); background: #fbfdff; }
+.checkboxField { flex-direction: row; align-items: center; gap: 8px; }
+
+.rowList { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) auto; gap: 8px; align-items: center; background: #fbfdff; border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+.row input { font: inherit; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; min-width: 0; }
+.removeButton { border: 1px solid var(--border); background: white; color: #a53434; border-radius: 6px; padding: 7px 10px; font-size: 12px; cursor: pointer; }
+
+.actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.saveButton { border: 1px solid #1f61d1; background: var(--blue); color: white; border-radius: 8px; padding: 9px 16px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.saveButton:disabled { opacity: 0.6; cursor: default; }
+.addButton { border: 1px dashed var(--border); background: transparent; color: #46586e; border-radius: 8px; padding: 8px 12px; font-size: 12px; cursor: pointer; align-self: flex-start; margin-top: 10px; }
+.savedNote { font-size: 12px; color: #1a7f4b; }
+
+@media (max-width: 700px) { .page { padding: 24px 18px; } }
