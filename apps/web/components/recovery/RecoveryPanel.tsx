@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { approveOutreach, fetchRecoveryPlanBySlot, recoverFromCancellation, respondToRecoveryPlan, type RecoveryPlan } from "@/lib/api";
+import { fetchRecoveryPlanBySlot, type RecoveryPlan } from "@/lib/api";
 import { dateLabel, timeLabel, type Appointment } from "@/components/appointments/appointment-data";
 import { Icon } from "@/components/ui/Icon";
 import { sampleCandidates } from "./mock-data";
@@ -32,11 +32,6 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
   const [plan, setPlan] = useState<RecoveryPlan | null>(null);
   const [loading, setLoading] = useState(slotId !== undefined);
   const [failed, setFailed] = useState(false);
-  const [triggering, setTriggering] = useState(false);
-  const [callState, setCallState] = useState<"idle" | "calling" | "placed" | "not_configured" | "failed">("idle");
-  const [accepting, setAccepting] = useState(false);
-  const [rearranged, setRearranged] = useState(false);
-  const [declining, setDeclining] = useState(false);
 
   useEffect(() => { dialog.current?.showModal(); }, []);
 
@@ -56,71 +51,6 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
     const id = setInterval(poll, POLL_MS);
     return () => { live = false; clearInterval(id); };
   }, [slotId]);
-
-  async function triggerNow() {
-    if (slotId === undefined) return;
-    setTriggering(true);
-    try {
-      const result = await recoverFromCancellation(slotId);
-      setPlan(result);
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    } finally {
-      setTriggering(false);
-    }
-  }
-
-  /** The candidate said no on the call. Nothing captures that today - a
-   *  live decline doesn't reach the state machine, so the offer would sit
-   *  until its timeout elapsed before anyone else was tried. Recording it
-   *  here advances to the next candidate immediately, which is also what
-   *  authorizes the incentive on that next offer (recovery_rules
-   *  .incentive_from_attempt). */
-  async function markDeclined(planId: string) {
-    setDeclining(true);
-    try {
-      const result = await respondToRecoveryPlan(planId, "declined");
-      setPlan(result);
-      setCallState("idle");
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    } finally {
-      setDeclining(false);
-    }
-  }
-
-  async function acceptRearrangement(planId: string) {
-    setAccepting(true);
-    try {
-      const result = await respondToRecoveryPlan(planId, "accepted");
-      setPlan(result);
-      setRearranged(true);
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    } finally {
-      setAccepting(false);
-    }
-  }
-
-  async function callNow(outreachId: number) {
-    setCallState("calling");
-    try {
-      const attempt = await approveOutreach(outreachId);
-      // "approved" (not "placed") means the approval was recorded but
-      // ElevenLabs/Twilio env vars aren't set yet - a config gap, not a
-      // failed call attempt. See call_service.CallNotConfigured.
-      setCallState(
-        attempt.status === "placed" ? "placed"
-          : attempt.status === "approved" ? "not_configured"
-          : "failed",
-      );
-    } catch {
-      setCallState("failed");
-    }
-  }
 
   // Real ranking when we have it; clearly-labelled fixtures when we don't
   // (locally-created slots have no server row for the backend to recover).
@@ -185,8 +115,7 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
             : "Ranked examples of how patient preferences can be explained."}</p>
       {failed && <p className={styles.caption}>Could not reach the recovery API — showing sample data instead.</p>}
       {awaitingPlan && <p className={styles.status} role="status">
-        No cancellation recovery has started for this slot yet — the autonomous scheduler ticks every few seconds.{" "}
-        <button type="button" className={styles.secondary} onClick={triggerNow} disabled={triggering}>{triggering ? "Starting…" : "Trigger recovery now"}</button>
+        Cancellation detected — finding and ranking candidates now. Calling starts on its own as soon as they are ranked.
       </p>}
       {isLive && plan?.excluded?.length ? (
         <ul className={styles.caption} aria-label="Patients excluded before ranking">
@@ -200,12 +129,9 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
           <div className={styles.score}><strong>{candidate.score === null ? "—" : `${candidate.score}%`}</strong><span>{candidate.score === null ? "Not ranked" : isLive ? "Match score" : "Example score"}</span></div>
         </li>)}
       </ol>
-      {isLive && plan?.status === "pending" && currentRaw?.currently_booked_slot_id && <div className={styles.status} role="status">
-        <p><strong>Rearrange calendar?</strong> {currentPatientId} is already booked {rearrangeFromWhen}, but their stored preference is a better fit for this slot. Moving them here frees up their old time for further recovery, and they'll be sent a message about the change.</p>
-        <button type="button" className={styles.primary} onClick={() => plan.plan_id && acceptRearrangement(plan.plan_id)} disabled={accepting || rearranged}>
-          {accepting ? "Rearranging…" : rearranged ? "Rearranged ✓ — message sent" : "Rearrange & notify"}
-        </button>
-      </div>}
+      {isLive && plan?.status === "pending" && currentRaw?.currently_booked_slot_id && <p className={styles.status} role="status">
+        {currentPatientId} is already booked {rearrangeFromWhen} — this slot fits their stored preference better, so the call offers them the move.
+      </p>}
       {isLive && plan?.stage === "INCENTIVE" && plan?.selected_incentive && <p className={styles.status} role="status">
         {plan.selected_incentive.decision === "offer_incentive"
           ? `Clinic-approved incentive offered: ${plan.selected_incentive.chosen_incentive ?? "discount"}. ${plan.selected_incentive.reasoning ?? ""}`
@@ -214,25 +140,15 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
       {isLive && plan?.outreach?.should_call && <div className={styles.status} role="status">
         <p><strong>Nemotron recommends calling:</strong> “{plan.outreach.call_brief.opening_line}”</p>
         {plan.outreach.call_brief.incentive_pitch && <p>Incentive to offer on the call: {plan.outreach.call_brief.incentive_pitch}</p>}
-        {plan.outreach.status !== "pending_approval" || callState !== "idle" ? (
-          <p>
-            {callState === "calling" ? "Placing the call…"
-              : plan.outreach.status === "placed" || callState === "placed" ? "📞 Call placed — this is a real outbound call, not a simulation."
-              : plan.outreach.status === "rejected" ? "Call skipped."
-              : callState === "not_configured" ? "Approved, but ElevenLabs/Twilio aren't configured on this deployment yet — no call was placed."
-              : callState === "failed" ? "Call attempt failed — check ElevenLabs/Twilio configuration and logs."
-              : `Call status: ${plan.outreach.status}`}
-          </p>
-        ) : (
-          <button type="button" className={styles.primary} onClick={() => callNow(plan.outreach!.id)}>📞 Call {currentPatientId ?? candidates[0]?.name ?? "candidate"} now</button>
-        )}
+        <p>
+          {plan.outreach.status === "placed" ? "📞 Calling now — a real outbound call, placed automatically."
+            : plan.outreach.status === "completed_accepted" ? "Accepted on the call ✓"
+            : plan.outreach.status === "completed_declined" ? "Declined on the call — moving to the next candidate, with an incentive."
+            : plan.outreach.status === "failed" ? "Call attempt failed — check the ElevenLabs/Twilio configuration."
+            : plan.outreach.status === "approved" ? "Approved, but ElevenLabs/Twilio aren't configured on this deployment — no call was placed."
+            : "Queued — dialling automatically."}
+        </p>
       </div>}
-      {isLive && plan?.status === "pending" && currentPatientId && !currentRaw?.currently_booked_slot_id && <p className={styles.status} role="status">
-        {currentPatientId} said no on the call? Record it and SlotSaver moves to the next candidate straight away — the next offer is the one allowed to carry a discount.{" "}
-        <button type="button" className={styles.secondary} onClick={() => plan.plan_id && markDeclined(plan.plan_id)} disabled={declining}>
-          {declining ? "Recording…" : `Mark ${currentPatientId} declined →`}
-        </button>
-      </p>}
       {isLive && plan?.status === "filled" && <p className={styles.status} role="status">Slot recovered — booked automatically once a candidate accepted. No owner action was required.</p>}
       {isLive && plan?.status === "no_candidates" && <p className={styles.status} role="status">No stored intent matched this slot — it would go unfilled.</p>}
       {isLive && plan?.status === "ranking_failed" && <p className={styles.status} role="status">{plan.message ?? "Ranking failed."}</p>}

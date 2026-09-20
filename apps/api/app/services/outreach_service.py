@@ -197,18 +197,15 @@ def maybe_auto_call(db: Session, attempt: OutreachAttempt, candidate: dict | Non
     leaves the attempt in 'pending_approval' for the existing manual queue,
     unchanged from today's behavior.
 
-    A candidate who is already booked into a different appointment
-    (candidate["currently_booked_slot_id"] is set - see recovery_matcher)
-    is a REARRANGEMENT, not a fill: the dashboard's "Rearrange & notify"
-    action moves them directly, on the owner's say-so, and was never meant
-    to place a phone call. Auto-calling them anyway would ring the business
-    (or, in a demo, the same overridden number) for every rearrangement
-    step on top of the real fill/incentive call, which is not what "call
-    automatically" was asking for.
+    EVERY ranked candidate is called, including one already booked
+    elsewhere: offering them a slot that fits their stored preference better
+    is a real call to make ("a Tuesday morning opened up - want to move?"),
+    and skipping them stalled the whole queue on a candidate nobody would
+    ever dial. Calls stay sequential because the next offer is only placed
+    once the previous call has ended (recovery_scheduler
+    ._resolve_finished_calls), so this cannot put two calls on one line.
     """
     if not attempt.should_call:
-        return attempt
-    if candidate is not None and candidate.get("currently_booked_slot_id"):
         return attempt
     try:
         auto_call_enabled = get_recovery_rules(db)["auto_call_enabled"]
