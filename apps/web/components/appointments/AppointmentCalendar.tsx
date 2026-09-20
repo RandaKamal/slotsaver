@@ -323,26 +323,13 @@ export function AppointmentCalendar() {
         </div>
       </header>
 
-      <div className={styles.statsRow}>
-        <div className={styles.stat}><span className={styles.statLabel}>Open slots</span><span className={styles.statValue}>{metrics?.open_slots ?? "—"}</span></div>
-        <div className={styles.stat}><span className={styles.statLabel}>Booked</span><span className={styles.statValue}>{metrics?.booked ?? "—"}</span></div>
-        <div className={styles.stat}><span className={styles.statLabel}>Fill rate</span><span className={styles.statValue}>{fillRateLabel}</span></div>
-      </div>
-
       <div className={styles.aiBar} role="status">
         <span className={styles.aiBarDot} aria-hidden="true" />
         <Icon name="recovery" />
         <span>{aiStatusText}{usingSample ? " • sample data, API unreachable" : ""}</span>
+        {metrics && <span className={styles.aiBarMetrics}>{metrics.booked} booked · {metrics.open_slots} open · {fillRateLabel} filled</span>}
       </div>
 
-      {openings.length > 0 && <section className={styles.openSlots} aria-label="Open slots">
-        <div className={styles.openSlotsHeading}><Icon name="recovery" /> {openings.length} {openings.length === 1 ? "opening" : "openings"}</div>
-        <div className={styles.openSlotsList}>{openings.map((slot) => <div key={slot.id} className={styles.openSlot}>
-          <span>{dateLabel(slot.date, { weekday: "short", month: "short", day: "numeric" })} · {timeLabel(slot.time)}</span>
-          <em>{slot.visitType} · {slot.provider} · cancelled by {slot.patient}{serverIdOf(slot) !== undefined ? ` · ${stageLabel(recoveryPlans[serverIdOf(slot)!])}` : ""}</em>
-          <button type="button" className={styles.secondary} onClick={() => setRecoveryId(slot.id)} aria-label={`Find matching ${customerLabel.toLowerCase()}s for ${slot.patient}’s cancelled appointment`}>Find matches →</button>
-        </div>)}</div>
-      </section>}
       {recoveryAppointment && <RecoveryPanel key={recoveryAppointment.id} appointment={recoveryAppointment} slotId={(recoveryAppointment as Appointment & { serverId?: number }).serverId} onClose={() => setRecoveryId(null)} />}
       <section className={styles.calendar} aria-label="Weekly appointment calendar">
         <div className={styles.toolbar}>
@@ -362,7 +349,7 @@ export function AppointmentCalendar() {
               <div className={styles.timeColumn}>{hours.map((hour) => <div key={hour}>{timeLabel(`${hour}:00`).replace(":00", "")}</div>)}</div>
               {days.map((day) => <div key={day} className={`${styles.dayColumn} ${day === today ? styles.todayColumn : ""}`}>
                 {hours.map((hour) => <button key={hour} className={styles.slot} aria-label={`Add appointment on ${dateLabel(day, { weekday: "long", month: "long", day: "numeric" })} at ${timeLabel(`${hour}:00`)}`} onClick={() => edit(undefined, day, `${String(hour).padStart(2, "0")}:00`)} />)}
-                {arrange(visible.filter((event) => event.date === day)).map(({ event, lane, lanes }) => <button key={event.id} className={`${styles.event} ${event.status === "cancelled" ? styles.cancelled : styles.booked}`} style={{ top: (minutes(event.time) - openHour * 60) * 1.2, height: Math.max(event.duration * 1.2 - 4, 16), left: `calc(${lane / lanes * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)` }} onClick={() => edit(event)} aria-label={`${event.patient}, ${event.visitType}, ${event.provider}, ${timeLabel(event.time)}, ${event.status}. Edit appointment`} title={`${event.patient} · ${event.provider} · ${timeLabel(event.time)} · ${event.duration} min · ${event.status}`}>
+                {arrange(visible.filter((event) => event.date === day)).map(({ event, lane, lanes }) => <button key={event.id} className={`${styles.event} ${event.status === "cancelled" ? styles.cancelled : styles.booked}`} style={{ top: (minutes(event.time) - openHour * 60) * 1.2, height: Math.max(event.duration * 1.2 - 4, 16), left: `calc(${lane / lanes * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)` }} onClick={() => event.status === "cancelled" ? setRecoveryId(event.id) : edit(event)} aria-label={`${event.patient}, ${event.visitType}, ${event.provider}, ${timeLabel(event.time)}, ${event.status}. ${event.status === "cancelled" ? "Find matches" : "Edit appointment"}`} title={`${event.patient} · ${event.provider} · ${timeLabel(event.time)} · ${event.duration} min · ${event.status}${event.status === "cancelled" ? " · click to find matches" : ""}`}>
                   <strong>{event.patient}</strong>{event.duration >= 30 && <span>{event.visitType}</span>}{event.duration >= 45 && <span>{timeLabel(event.time)} · {event.duration} min</span>}{event.duration >= 60 && <span className={styles.eventProvider}>{event.status === "cancelled" ? (serverIdOf(event) !== undefined ? shortStageLabel(recoveryPlans[serverIdOf(event)!]) : "Open") : event.provider}</span>}
                 </button>)}
               </div>)}

@@ -177,6 +177,20 @@ async function decide(id: number, action: "approve" | "reject"): Promise<Outreac
 export const approveOutreach = (id: number) => decide(id, "approve");
 export const rejectOutreach = (id: number) => decide(id, "reject");
 
+// --- Customers / patient memory ------------------------------------------------
+
+export interface CustomerSummary {
+  patient_id: string;
+  saved_conversations: number;
+  latest_said: string | null;
+  latest_at: string | null;
+  brief: string;
+}
+
+export function fetchCustomers(signal?: AbortSignal): Promise<CustomerSummary[]> {
+  return getJson<CustomerSummary[]>("/api/customers", signal);
+}
+
 // --- Business profile ---------------------------------------------------------
 
 export interface BusinessProfileSummary {

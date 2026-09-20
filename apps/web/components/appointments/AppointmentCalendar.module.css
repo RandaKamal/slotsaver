@@ -22,6 +22,7 @@
 }
 .aiBar svg { color: #226be3; flex-shrink: 0; width: 14px; height: 14px; }
 .aiBarDot { width: 6px; height: 6px; border-radius: 50%; background: #226be3; flex-shrink: 0; animation: aiPulse 2.4s ease-in-out infinite; }
+.aiBarMetrics { margin-left: auto; font-weight: 600; color: #34557f; white-space: nowrap; }
 @keyframes aiPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 .calendar { border: 1px solid #e1e8f1; border-radius: 12px; background: white; overflow: hidden; box-shadow: 0 3px 12px #142c4903; }

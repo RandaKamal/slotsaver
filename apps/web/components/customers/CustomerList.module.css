@@ -1,0 +1,11 @@
+.page { padding: 22px 28px; max-width: 980px; margin: 0 auto; }
+.header h1 { font-size: clamp(19px, 1.8vw, 24px); font-weight: 600; letter-spacing: -0.6px; margin: 4px 0 4px; }
+.subtitle { color: var(--muted); font-size: 12.5px; margin: 0 0 18px; }
+
+.card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
+.cardHeader { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.cardHeader h2 { font-size: 14px; font-weight: 600; margin: 0; }
+.count { font-size: 11px; color: var(--muted); }
+.said { font-size: 12.5px; color: #34516f; margin: 8px 0 0; font-style: italic; }
+.brief { font-size: 12px; color: var(--muted); white-space: pre-line; margin: 10px 0 0; line-height: 1.6; }
+.empty { color: var(--muted); font-size: 13px; }

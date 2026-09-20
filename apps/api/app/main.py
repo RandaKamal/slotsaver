@@ -11,6 +11,7 @@ from app.api.routes import (
     appointments,
     benchmark,
     business_profile,
+    customers,
     disruptions,
     execution,
     health,
@@ -83,6 +84,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(business_profile.router)
 app.include_router(appointments.router)
+app.include_router(customers.router)
 app.include_router(disruptions.router)
 app.include_router(preferences.router)
 app.include_router(benchmark.router)
