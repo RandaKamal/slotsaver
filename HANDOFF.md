@@ -3,7 +3,24 @@
 Written for: the next Claude Code session picking this up.
 Last updated: 2026-09-20, at commit `1aa5856` on `main`.
 
-## Next task: deploy to DigitalOcean
+## Live deployment (as of 2026-09-20)
+
+| Piece | URL | Status |
+|---|---|---|
+| Frontend | https://slotsaver-smoky.vercel.app | live, public |
+| API | https://slotsaver-api.onrender.com | live, serving TigerData |
+| Database | TigerData `db-28739` (Postgres 18.6) | seeded, verified |
+
+ElevenLabs webhook tools now point at the Render URL (no longer a tunnel).
+
+**Outstanding:** `CORS_ALLOW_ORIGINS` on Render must be set to the Vercel URL -
+until then the dashboard loads but fetches nothing. Also set `BACKEND_BASE_URL`
+to the Render URL. And set up a keep-warm pinger: Render free sleeps after 15
+min idle with a ~1 min cold start.
+
+---
+
+## Previous task: deploy
 
 Everything below is context. The immediate job is deployment. Read
 **Deployment notes** first — several things are currently localhost-only or
