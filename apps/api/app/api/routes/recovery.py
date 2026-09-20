@@ -2,12 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.agents.mock_store import BUSINESS_POLICY, PATIENTS, RECOVERY_PLANS, new_plan_id
-from app.agents.nemotron.incentive import decide_incentive
+from app.agents.mock_store import PATIENTS, RECOVERY_PLANS, new_plan_id
 from app.agents.nemotron.ranker import rank_candidates
+from app.core.business_policy import BUSINESS_POLICY
 from app.db.models.appointment import Appointment
 from app.db.session import get_db
-from app.services.recovery_service import run_recovery
+from app.services.appointment_service import cancel_appointment
+from app.services.recovery_service import (
+    apply_incentive_decision,
+    get_recovery_plan_from_db,
+    record_candidate_response,
+)
+from app.services.slot_recovery import run_recovery
 
 router = APIRouter(prefix="/api/recovery", tags=["recovery"])
 
@@ -44,8 +50,14 @@ def create_recovery_plan(payload: PlanRequest) -> dict:
 
 
 @router.get("/{plan_id}")
-def get_recovery_plan(plan_id: str) -> dict:
+def get_recovery_plan(plan_id: str, db: Session = Depends(get_db)) -> dict:
     plan = RECOVERY_PLANS.get(plan_id)
+    if plan:
+        return plan
+    # Falls back to the DB so a plan survives past this process's lifetime -
+    # /plan (the manual-testing endpoint above) only ever writes in-memory,
+    # so this fallback only ever has something for from-cancellation plans.
+    plan = get_recovery_plan_from_db(db, plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan not found")
     return plan
@@ -56,36 +68,39 @@ class ResponseRequest(BaseModel):
 
 
 @router.post("/{plan_id}/response")
-def record_response(plan_id: str, payload: ResponseRequest) -> dict:
-    plan = RECOVERY_PLANS.get(plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail="plan not found")
+def record_response(
+    plan_id: str, payload: ResponseRequest, db: Session = Depends(get_db)
+) -> dict:
+    """Advances the offer to the plan's current candidate.
 
-    if payload.response == "accepted":
-        plan["status"] = "filled"
-        return plan
-
-    plan["current_candidate_index"] += 1
-    if plan["current_candidate_index"] >= len(plan["ranked_candidate_ids"]):
-        plan["status"] = "exhausted"
+    The DB row is the only source of truth here (not RECOVERY_PLANS) - see
+    recovery_service.record_candidate_response for the actual state machine:
+    accept atomically books the slot (via the same guarded update booking
+    already uses elsewhere, so it can't be double-won), decline/timeout move
+    to the next ranked candidate. Requires a plan created via
+    /from-cancellation - the /plan testing endpoint above never persists to
+    the DB, so it has no slot to book against.
+    """
+    plan = record_candidate_response(db, plan_id, payload.response)
+    if plan_id in RECOVERY_PLANS:
+        RECOVERY_PLANS[plan_id] = plan
     return plan
 
 
 @router.post("/{plan_id}/incentive")
-def apply_incentive(plan_id: str) -> dict:
-    plan = RECOVERY_PLANS.get(plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail="plan not found")
+def apply_incentive(plan_id: str, db: Session = Depends(get_db)) -> dict:
+    """Incentive fallback: only reachable once the normal queue is exhausted.
 
-    decision = decide_incentive(
-        open_slot=plan["open_slot"],
-        business_policy=BUSINESS_POLICY,
-        decline_history=[{"patient_id": pid, "response": "declined"} for pid in plan["ranked_candidate_ids"]],
-    )
-    plan["stage"] = "INCENTIVE"
-    plan["selected_incentive"] = decision
-    plan["current_candidate_index"] = 0
-    plan["status"] = "pending"
+    See recovery_service.apply_incentive_decision - calls Kevin's existing
+    decide_incentive (never reimplemented), then deterministically checks the
+    result against business policy before accepting it. From there, the same
+    /response endpoint above handles accept (books the slot, plan filled) and
+    decline (advances to the next ranked candidate) exactly as in the normal
+    queue - nothing new to reimplement there.
+    """
+    plan = apply_incentive_decision(db, plan_id, BUSINESS_POLICY)
+    if plan_id in RECOVERY_PLANS:
+        RECOVERY_PLANS[plan_id] = plan
     return plan
 
 
@@ -99,18 +114,24 @@ def recover_from_cancellation(
 ) -> dict:
     """Frees a booked slot and runs recovery on it, synchronously.
 
-    Same core as a patient cancelling on a live call (POST /api/voice/cancel);
-    that path runs it in the background because someone is on the phone, this
-    one blocks because the dashboard wants the ranking back to display.
+    Cancels the booking (deterministic - see appointment_service.cancel_appointment;
+    rejects a slot that isn't actually booked), selects patients whose STORED
+    INTENT fits it (deterministic, see recovery_matcher), then has Nemotron rank
+    the survivors. Without stored intent this slot simply goes empty - nobody
+    knows who to call. If Nemotron itself is unreachable (e.g. no NVIDIA_API_KEY),
+    everything up to that point already happened and is persisted - only the
+    ranking step is marked failed, never faked.
+
+    Shares one pipeline with a patient cancelling on a live call
+    (POST /api/voice/cancel); that path runs it in the background because
+    someone is on the phone, this one blocks so the dashboard gets the ranking
+    back to display.
     """
-    slot = db.get(Appointment, payload.slot_id)
-    if slot is None:
+    existing = db.get(Appointment, payload.slot_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail=f"No such slot: {payload.slot_id}")
+    previous_holder = existing.customer_id
 
-    previous_holder = slot.customer_id
-    slot.status = "available"
-    slot.customer_id = None
-    db.commit()
-    db.refresh(slot)
+    slot = cancel_appointment(db, payload.slot_id)
 
-    return {**run_recovery(db, slot), "cancelled_by": previous_holder}
+    return {**run_recovery(db, slot, cancelled_by=previous_holder), "cancelled_by": previous_holder}

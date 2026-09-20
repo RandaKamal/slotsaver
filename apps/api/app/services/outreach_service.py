@@ -19,7 +19,7 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.agents.mock_store import BUSINESS_POLICY
+from app.core.business_policy import BUSINESS_POLICY
 from app.agents.nemotron.incentive import decide_incentive
 from app.agents.nemotron.outreach import decide_outreach, generate_call_brief
 from app.db.models.outreach import OutreachAttempt

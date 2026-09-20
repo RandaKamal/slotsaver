@@ -21,6 +21,9 @@ _ADDITIVE: dict[str, dict[str, str]] = {
         "refinement_diff": "JSON",
         "phone_number": "VARCHAR",
     },
+    "recovery_plans": {
+        "candidate_statuses": "JSON DEFAULT '{}' NOT NULL",
+    },
 }
 
 

@@ -20,7 +20,7 @@ from app.services.appointment_service import (
     get_available_slots,
 )
 from app.services.preference_service import run_extraction, save_pending_record
-from app.services.recovery_service import recover_freed_slot
+from app.services.slot_recovery import recover_freed_slot
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 
