@@ -14,6 +14,7 @@ cancelling - did not actually trigger the product.
 Assumes the slot is ALREADY free; it does not release it.
 """
 
+import datetime
 import logging
 
 from sqlalchemy.orm import Session
@@ -32,6 +33,16 @@ from app.services.recovery_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _as_utc(value: datetime.datetime) -> datetime.datetime:
+    """Appointment.cancelled_at is a plain DateTime column (no timezone=True),
+    so Postgres round-trips it as naive even though every write into it is
+    UTC (see appointment_service.cancel_appointment). RecoveryPlanRecord.
+    created_at IS timezone-aware, so comparing the two directly raises
+    "can't compare offset-naive and offset-aware datetimes" - this normalizes
+    either side to a comparable, correctly-UTC value."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=datetime.timezone.utc)
 
 
 def slot_payload(slot: Appointment) -> dict:
@@ -58,7 +69,9 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     re-ranking and creating a duplicate.
     """
     existing = get_latest_plan_for_slot(db, slot.id)
-    if existing is not None and (slot.cancelled_at is None or existing.created_at >= slot.cancelled_at):
+    if existing is not None and (
+        slot.cancelled_at is None or _as_utc(existing.created_at) >= _as_utc(slot.cancelled_at)
+    ):
         return {**plan_record_to_dict(existing), "eligible": [], "excluded": [], "outreach": None}
 
     eligible, excluded = find_candidates(db, slot.start_time, slot.provider)
@@ -154,8 +167,6 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
 
     # Ranking says who COULD take the slot; this decides whether calling the
     # top match is worth doing and drafts what the agent should say.
-    outreach = evaluate_top_candidate(db, open_slot, top_candidate, top_score, slot.price)
-
     outreach = evaluate_top_candidate(db, open_slot, top_candidate, top_score, slot.price)
 
     return {
