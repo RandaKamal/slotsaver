@@ -150,9 +150,19 @@ The obvious way to detect that a generation hit the ceiling is to compare the
 emitted token count against it. That test is wrong for any model that reasons
 in hidden tokens. In our \geminiName{} runs, generations were visibly cut in
 mid sentence, including mid answer, while the reported output token count stood
-at roughly twenty against a ceiling of \tokenLowBudget{}. The reasoning tokens
-are billed against the ceiling but are absent from the visible output count, so
-the naive check reports no truncation precisely where truncation is worst.
+at roughly twenty against a ceiling of \tokenLowBudget{}.
+
+Instrumenting the vendor's full token accounting shows why. At the
+\tokenHighBudget{} ceiling, where the model runs to completion, it emits
+\geminiVisibleTokens{} visible tokens per item but spends
+\geminiThinkingTokens{} reasoning tokens that do not appear in the visible
+count. True generation spend is therefore roughly \geminiSpendRatio{} times what
+the output token field reports. A ceiling of \tokenLowBudget{} cannot
+accommodate that, so truncation is not merely possible at the lower ceiling, it
+is arithmetically unavoidable, which is exactly what the raw generations show.
+The reasoning tokens are billed against the ceiling but are absent from the
+field an evaluator would naturally check, so the naive test reports no
+truncation precisely where truncation is certain.
 
 We flag this because it is a trap with an unpleasant shape: the check fails
 silently, it fails in the direction that makes a model look worse rather than

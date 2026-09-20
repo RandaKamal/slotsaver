@@ -302,6 +302,33 @@ def fig_efficiency(recs, out="fig3_efficiency.png"):
     print(f"  {out}")
 
 
+def _instrumented(recs, model, budget):
+    """Records from after thinking-token capture was added.
+
+    Averaging over earlier records would silently mix in zeros for a field that
+    was never measured, understating the very quantity being reported.
+    """
+    return [r for r in attempted(sel(recs, model, budget))
+            if r.get("thinking_tokens") is not None]
+
+
+def _fmt_mean(recs, model, budget, field):
+    rows = _instrumented(recs, model, budget)
+    if not rows:
+        return "n/a"
+    return f"{sum((r.get(field) or 0) for r in rows) / len(rows):.0f}"
+
+
+def _spend_ratio(recs, model, budget):
+    """How far the visible output count under-reports true generation spend."""
+    rows = _instrumented(recs, model, budget)
+    vis = sum((r.get("output_tokens") or 0) for r in rows)
+    think = sum((r.get("thinking_tokens") or 0) for r in rows)
+    if not rows or not vis:
+        return "n/a"
+    return f"{(vis + think) / vis:.0f}"
+
+
 def pct(x):
     return f"{x * 100:.1f}" + chr(92) + "%"
 
@@ -335,6 +362,9 @@ def write_latex(recs):
         "claudeHighAcc": pct(acc("claude", top)),
         "geminiLowAcc": pct(acc("gemini", low)),
         "geminiHighAcc": pct(acc("gemini", top)),
+        "geminiVisibleTokens": _fmt_mean(recs, "gemini", top, "output_tokens"),
+        "geminiThinkingTokens": _fmt_mean(recs, "gemini", top, "thinking_tokens"),
+        "geminiSpendRatio": _spend_ratio(recs, "gemini", top),
         "datasetSize": "1{,}000",
         "geminiPublishedRepro": "48.9" + chr(92) + "%",
         "geminiPublishedPaper": "48" + chr(92) + "%",
