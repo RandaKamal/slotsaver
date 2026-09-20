@@ -116,8 +116,18 @@ def _authorized_incentive(db: Session, record: RecoveryPlanRecord, attempt_numbe
     business_policy = get_business_policy(db)
     statuses = dict(record.candidate_statuses or {})
     ranked = record.ranked_candidate_ids or []
+    # What was already offered and still refused goes in, not just who said
+    # no: an incentive that has now been turned down is evidence the next
+    # offer needs to be worth more than it, which is what lets the third call
+    # escalate past the second instead of repeating it. The policy gate below
+    # still caps whatever comes back.
+    previously_offered = (record.selected_incentive or {}).get("chosen_incentive")
     decline_history = [
-        {"patient_id": pid, "response": statuses.get(pid, "declined")}
+        {
+            "patient_id": pid,
+            "response": statuses.get(pid, "declined"),
+            "incentive_offered": previously_offered,
+        }
         for pid in ranked
         if statuses.get(pid) in ("declined", "expired")
     ]

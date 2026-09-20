@@ -78,6 +78,9 @@ _ADDITIVE: dict[str, dict[str, _Column]] = {
         "cancelled_at": _Column(_TIMESTAMP),
         "last_cancelled_by": _Column("VARCHAR"),
     },
+    "outreach_attempts": {
+        "conversation_id": _Column("VARCHAR"),
+    },
 }
 
 

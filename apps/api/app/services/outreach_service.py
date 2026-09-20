@@ -175,8 +175,11 @@ def place_call_for_attempt(db: Session, attempt: OutreachAttempt) -> OutreachAtt
         else None
     )
     try:
-        place_call(attempt, slot, build_patient_brief(db, attempt.patient_id))
+        response = place_call(attempt, slot, build_patient_brief(db, attempt.patient_id))
         attempt.status = "placed"
+        # Kept so the call's outcome can be read back when it ends, instead of
+        # the queue having to advance on a blind timeout - see call_outcome.py.
+        attempt.conversation_id = (response or {}).get("conversation_id")
     except CallNotConfigured as exc:
         logger.info("attempt %s approved but not callable yet: %s", attempt.id, exc)
     except Exception:

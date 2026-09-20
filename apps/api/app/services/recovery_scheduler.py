@@ -35,10 +35,16 @@ from sqlalchemy.orm import Session
 
 from app.core.business_policy import get_business_policy
 from app.db.models.appointment import Appointment
+from app.db.models.outreach import OutreachAttempt
 from app.db.models.recovery import RecoveryPlanRecord
 from app.db.session import SessionLocal
 from app.services.business_profile_service import get_recovery_rules
-from app.services.recovery_service import apply_incentive_decision, record_candidate_response
+from app.services.call_outcome import CallStatusUnavailable, call_has_ended
+from app.services.recovery_service import (
+    apply_incentive_decision,
+    get_latest_plan_for_slot,
+    record_candidate_response,
+)
 from app.services.slot_recovery import run_recovery
 
 logger = logging.getLogger(__name__)
@@ -101,14 +107,73 @@ def _apply_incentive_where_exhausted(db: Session) -> None:
             logger.exception("autonomous incentive decision failed for plan %s", plan.plan_id)
 
 
+def _resolve_finished_calls(db: Session) -> None:
+    """Advances the queue the moment a placed call ENDS, on its real outcome.
+
+    Without this the only thing that could move a pending offer along was the
+    blind timeout, so a candidate who said no ten seconds in still held the
+    slot for the full window. See call_outcome.py for how the outcome is
+    decided (booked-by-them = accepted, ended-without-booking = declined).
+
+    An accepted call needs no action here: the phone agent booked the slot
+    through its own tool during the call, and the plan is closed out by
+    marking the attempt rather than replaying a booking that already happened.
+    """
+    placed = db.execute(
+        select(OutreachAttempt)
+        .where(OutreachAttempt.status == "placed")
+        .where(OutreachAttempt.conversation_id.isnot(None))
+    ).scalars().all()
+
+    for attempt in placed:
+        try:
+            if not call_has_ended(attempt.conversation_id):
+                continue
+        except CallStatusUnavailable as exc:
+            # Leave it 'placed' and try again next tick; the timeout is still
+            # there as the backstop if this never becomes readable.
+            logger.info("call outcome for attempt %s not readable yet: %s", attempt.id, exc)
+            continue
+
+        slot = db.get(Appointment, attempt.slot_id)
+        accepted = slot is not None and slot.status == "booked" and slot.customer_id == attempt.patient_id
+        attempt.status = "completed_accepted" if accepted else "completed_declined"
+        db.commit()
+
+        plan = get_latest_plan_for_slot(db, attempt.slot_id)
+        if plan is None or plan.status != "pending":
+            continue
+        ranked = plan.ranked_candidate_ids or []
+        idx = plan.current_candidate_index
+        # Only the candidate currently being offered can move this plan - a
+        # late-arriving outcome for someone already passed over must not
+        # advance the queue a second time.
+        if idx >= len(ranked) or ranked[idx] != attempt.patient_id:
+            continue
+
+        if accepted:
+            logger.info("call accepted by %s; slot %s already booked", attempt.patient_id, attempt.slot_id)
+            continue
+
+        try:
+            logger.info(
+                "call with %s ended without a booking - advancing plan %s",
+                attempt.patient_id, plan.plan_id,
+            )
+            record_candidate_response(db, plan.plan_id, "declined")
+        except Exception:
+            logger.exception("advancing plan %s after a finished call failed", plan.plan_id)
+
+
 def tick() -> None:
-    """One full pass of all three jobs. Own session; never raises."""
+    """One full pass of all four jobs. Own session; never raises."""
     db = SessionLocal()
     try:
         rules = get_recovery_rules(db)
         if not rules["auto_recovery_enabled"]:
             return
         _plan_new_cancellations(db)
+        _resolve_finished_calls(db)
         _advance_timed_out_offers(db, rules["candidate_timeout_seconds"])
         if rules["incentive_fallback_enabled"]:
             _apply_incentive_where_exhausted(db)

@@ -42,8 +42,16 @@ class OutreachAttempt(Base):
     call_brief: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     # pending_approval -> approved | rejected -> (approved only) placed | failed
+    # -> (placed only) completed_accepted | completed_declined, set once the
+    # call itself has finished and its outcome has been read back.
     status: Mapped[str] = mapped_column(String, default="pending_approval", nullable=False)
     decided_by: Mapped[str | None] = mapped_column(String, nullable=True)  # owner identity, once we have one
+
+    # ElevenLabs' id for the placed call. Returned by the outbound-call API and
+    # kept so the call's OUTCOME can be read back when it ends (see
+    # call_outcome.py) - without it a finished call is indistinguishable from
+    # one still ringing, and the queue can only advance on a blind timeout.
+    conversation_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
