@@ -43,6 +43,11 @@ class RecoveryPlanRecord(Base):
     # "pending" | "filled" | "exhausted" | "ranking_failed"
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
 
+    # patient_id -> "offered" | "declined" | "expired" | "accepted". Every
+    # candidate who was ever the current offer gets an entry here, so the
+    # full outreach history survives a restart, not just the current pointer.
+    candidate_statuses: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
     revenue_at_risk: Mapped[float | None] = mapped_column(Float, nullable=True)
     message: Mapped[str | None] = mapped_column(String, nullable=True)
 

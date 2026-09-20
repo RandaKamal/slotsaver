@@ -9,7 +9,11 @@ from app.db.models.appointment import Appointment
 from app.db.session import get_db
 from app.services.appointment_service import cancel_appointment
 from app.services.recovery_matcher import find_candidates
-from app.services.recovery_service import get_recovery_plan_from_db, save_recovery_plan
+from app.services.recovery_service import (
+    get_recovery_plan_from_db,
+    record_candidate_response,
+    save_recovery_plan,
+)
 
 router = APIRouter(prefix="/api/recovery", tags=["recovery"])
 
@@ -64,18 +68,22 @@ class ResponseRequest(BaseModel):
 
 
 @router.post("/{plan_id}/response")
-def record_response(plan_id: str, payload: ResponseRequest) -> dict:
-    plan = RECOVERY_PLANS.get(plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail="plan not found")
+def record_response(
+    plan_id: str, payload: ResponseRequest, db: Session = Depends(get_db)
+) -> dict:
+    """Advances the offer to the plan's current candidate.
 
-    if payload.response == "accepted":
-        plan["status"] = "filled"
-        return plan
-
-    plan["current_candidate_index"] += 1
-    if plan["current_candidate_index"] >= len(plan["ranked_candidate_ids"]):
-        plan["status"] = "exhausted"
+    The DB row is the only source of truth here (not RECOVERY_PLANS) - see
+    recovery_service.record_candidate_response for the actual state machine:
+    accept atomically books the slot (via the same guarded update booking
+    already uses elsewhere, so it can't be double-won), decline/timeout move
+    to the next ranked candidate. Requires a plan created via
+    /from-cancellation - the /plan testing endpoint above never persists to
+    the DB, so it has no slot to book against.
+    """
+    plan = record_candidate_response(db, plan_id, payload.response)
+    if plan_id in RECOVERY_PLANS:
+        RECOVERY_PLANS[plan_id] = plan
     return plan
 
 
