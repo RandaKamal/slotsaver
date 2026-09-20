@@ -34,17 +34,9 @@ PATIENTS: dict[str, dict] = {
     },
 }
 
-BUSINESS_POLICY = {
-    "max_discount_percent": 20,
-    "minimum_revenue": 60,
-    "allowed_incentives": [
-        {"id": "10_percent_discount", "type": "percent_discount", "value": 10},
-        {"id": "future_credit_10", "type": "fixed_credit", "value": 10},
-        {"id": "referral_offer_15", "type": "referral_offer", "value": 15},
-    ],
-    "incentive_time_threshold_hours": 24,
-    "excluded_services": ["cosmetic_consult"],
-}
+# BUSINESS_POLICY moved to app/core/business_policy.py - it's config, not
+# demo state, and this module's own docstring says core behavior shouldn't
+# depend on it.
 
 # plan_id -> RecoveryPlan-shaped dict
 RECOVERY_PLANS: dict[str, dict] = {}

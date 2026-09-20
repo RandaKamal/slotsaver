@@ -2,14 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.agents.mock_store import BUSINESS_POLICY, PATIENTS, RECOVERY_PLANS, new_plan_id
-from app.agents.nemotron.incentive import decide_incentive
+from app.agents.mock_store import PATIENTS, RECOVERY_PLANS, new_plan_id
 from app.agents.nemotron.ranker import rank_candidates
+from app.core.business_policy import BUSINESS_POLICY
 from app.db.models.appointment import Appointment
 from app.db.session import get_db
 from app.services.appointment_service import cancel_appointment
 from app.services.recovery_matcher import find_candidates
 from app.services.recovery_service import (
+    apply_incentive_decision,
     get_recovery_plan_from_db,
     record_candidate_response,
     save_recovery_plan,
@@ -88,20 +89,19 @@ def record_response(
 
 
 @router.post("/{plan_id}/incentive")
-def apply_incentive(plan_id: str) -> dict:
-    plan = RECOVERY_PLANS.get(plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail="plan not found")
+def apply_incentive(plan_id: str, db: Session = Depends(get_db)) -> dict:
+    """Incentive fallback: only reachable once the normal queue is exhausted.
 
-    decision = decide_incentive(
-        open_slot=plan["open_slot"],
-        business_policy=BUSINESS_POLICY,
-        decline_history=[{"patient_id": pid, "response": "declined"} for pid in plan["ranked_candidate_ids"]],
-    )
-    plan["stage"] = "INCENTIVE"
-    plan["selected_incentive"] = decision
-    plan["current_candidate_index"] = 0
-    plan["status"] = "pending"
+    See recovery_service.apply_incentive_decision - calls Kevin's existing
+    decide_incentive (never reimplemented), then deterministically checks the
+    result against business policy before accepting it. From there, the same
+    /response endpoint above handles accept (books the slot, plan filled) and
+    decline (advances to the next ranked candidate) exactly as in the normal
+    queue - nothing new to reimplement there.
+    """
+    plan = apply_incentive_decision(db, plan_id, BUSINESS_POLICY)
+    if plan_id in RECOVERY_PLANS:
+        RECOVERY_PLANS[plan_id] = plan
     return plan
 
 

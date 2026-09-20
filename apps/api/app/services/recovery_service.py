@@ -7,6 +7,7 @@ only decides who the "current" offer belongs to and what happens next.
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.agents.nemotron.incentive import decide_incentive
 from app.db.models.recovery import RecoveryPlanRecord
 from app.services.appointment_service import book_slot
 
@@ -41,7 +42,7 @@ def save_recovery_plan(db: Session, plan: dict, slot_id: int, cancelled_by: str 
     return record
 
 
-def _to_dict(record: RecoveryPlanRecord) -> dict:
+def plan_record_to_dict(record: RecoveryPlanRecord) -> dict:
     return {
         "plan_id": record.plan_id,
         "open_slot": record.open_slot,
@@ -66,7 +67,7 @@ def get_recovery_plan_from_db(db: Session, plan_id: str) -> dict | None:
     record = db.query(RecoveryPlanRecord).filter_by(plan_id=plan_id).first()
     if record is None:
         return None
-    return _to_dict(record)
+    return plan_record_to_dict(record)
 
 
 def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
@@ -122,4 +123,105 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
 
     db.commit()
     db.refresh(record)
-    return _to_dict(record)
+    return plan_record_to_dict(record)
+
+
+def _incentive_within_policy(
+    decision: dict, business_policy: dict, slot_price: float, service: str
+) -> tuple[bool, str | None]:
+    """Deterministic backstop over Nemotron's incentive choice - mirrors the
+    role recovery_matcher.find_candidates plays for ranking: the model picks,
+    this gates. The prompt already tells it these rules; this is what makes
+    them actually enforced rather than merely requested.
+    """
+    if decision.get("decision") != "offer_incentive":
+        return True, None  # nothing to validate for continue/stop decisions
+
+    chosen_id = decision.get("chosen_incentive")
+    allowed = {i["id"]: i for i in business_policy.get("allowed_incentives", [])}
+    if chosen_id not in allowed:
+        return False, f"chosen incentive {chosen_id!r} is not in the approved list"
+
+    if service in business_policy.get("excluded_services", []):
+        return False, f"{service!r} is excluded from incentives by policy"
+
+    incentive = allowed[chosen_id]
+    if incentive.get("type") == "percent_discount":
+        max_pct = business_policy.get("max_discount_percent", 0)
+        if incentive.get("value", 0) > max_pct:
+            return False, f"{incentive['value']}% exceeds the {max_pct}% policy maximum"
+        discounted = slot_price * (1 - incentive["value"] / 100)
+        min_revenue = business_policy.get("minimum_revenue", 0)
+        if discounted < min_revenue:
+            return False, f"discounted price {discounted:.2f} is below the {min_revenue} minimum"
+
+    return True, None
+
+
+def apply_incentive_decision(db: Session, plan_id: str, business_policy: dict) -> dict:
+    """Incentive fallback: only reachable once the normal queue is exhausted.
+
+    Calls Kevin's decide_incentive (never invented/mocked here), validates
+    whatever it returns against business_policy deterministically, and only
+    if it chose a compliant "offer_incentive" does it restart the offer
+    cycle - same ranked_candidate_ids, same record_candidate_response
+    accept/decline path, now with the incentive attached. A non-compliant
+    or failed decision is persisted plainly, never silently upgraded.
+    """
+    record = db.query(RecoveryPlanRecord).filter_by(plan_id=plan_id).first()
+    if record is None:
+        raise HTTPException(status_code=404, detail="plan not found")
+
+    if record.status != "exhausted":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"incentive fallback only triggers once the normal queue is "
+                f"exhausted (status={record.status})"
+            ),
+        )
+
+    ranked = record.ranked_candidate_ids or []
+    statuses = dict(record.candidate_statuses or {})
+    decline_history = [
+        {"patient_id": pid, "response": statuses.get(pid, "declined")} for pid in ranked
+    ]
+
+    try:
+        decision = decide_incentive(
+            open_slot=record.open_slot,
+            business_policy=business_policy,
+            decline_history=decline_history,
+        )
+    except Exception as exc:
+        record.message = f"Incentive decision failed: {exc}"
+        db.commit()
+        db.refresh(record)
+        return plan_record_to_dict(record)
+
+    slot_price = record.open_slot.get("price", 0)
+    service = record.open_slot.get("service_type", "")
+    compliant, violation = _incentive_within_policy(decision, business_policy, slot_price, service)
+    if not compliant:
+        decision = {
+            "decision": "stop_recovery",
+            "chosen_incentive": None,
+            "reasoning": f"Model's choice was rejected by policy: {violation}",
+            "rerank_required": False,
+        }
+
+    record.selected_incentive = decision
+    record.stage = "INCENTIVE"
+    record.message = decision.get("reasoning")
+
+    if decision.get("decision") == "offer_incentive" and ranked:
+        record.current_candidate_index = 0
+        record.status = "pending"
+        statuses[ranked[0]] = "offered"
+        record.candidate_statuses = statuses
+    # continue_full_price / stop_recovery / no candidates left: status stays
+    # "exhausted" - there is nothing left to offer.
+
+    db.commit()
+    db.refresh(record)
+    return plan_record_to_dict(record)
