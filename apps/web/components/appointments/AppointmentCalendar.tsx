@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { fetchAppointments, type ApiAppointment } from "@/lib/api";
+import { fetchAppointments, fetchMetrics, type ApiAppointment, type DashboardMetrics } from "@/lib/api";
 import { RecoveryPanel } from "@/components/recovery/RecoveryPanel";
 import { addDays, dateLabel, minutes, providers, sampleAppointments, timeLabel, validAppointment, visitTypes, weekStart, type Appointment } from "./appointment-data";
 import styles from "./AppointmentCalendar.module.css";
@@ -58,6 +58,16 @@ export function AppointmentCalendar() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState("");
   const [usingSample, setUsingSample] = useState(false);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+
+  useEffect(() => {
+    // Independent of the appointments fetch below - the metrics row and AI
+    // status bar degrade gracefully (dashes, no invented numbers) if this
+    // one fails without the calendar itself being affected.
+    fetchMetrics()
+      .then(setMetrics)
+      .catch(() => setMetrics(null));
+  }, []);
 
   useEffect(() => {
     const date = localToday();
@@ -149,32 +159,53 @@ export function AppointmentCalendar() {
   }
 
   if (!week) return <div className={styles.page}><h1>Appointments</h1><p role="status">Loading your calendar…</p></div>;
-  const sampleBanner = usingSample
-    ? <p role="status" className={styles.notice}>Backend unreachable — showing sample appointments. Start the API on :8000 for live clinic data.</p>
-    : null;
   const days = Array.from({ length: 7 }, (_, index) => addDays(week, index));
   const visible = events.filter((event) => days.includes(event.date) && (provider === "all" || provider === event.provider));
   const openings = visible.filter((event) => event.status === "cancelled");
   const recoveryAppointment = events.find((event) => event.id === recoveryId && event.status === "cancelled");
   const sample = JSON.stringify([{ patient: "Alex Morgan", provider: "Dr. Lee", visitType: "Follow-up", date: today, time: "10:00", duration: 60, status: "booked" }], null, 2);
 
+  // Real numbers only - "—" rather than a guess when /api/appointments/metrics
+  // is unreachable. Fill rate is derived client-side from the same two counts
+  // the backend already returns, not a new backend field.
+  const fillRateLabel = metrics && metrics.booked + metrics.open_slots > 0
+    ? `${Math.round((metrics.booked / (metrics.booked + metrics.open_slots)) * 100)}%`
+    : "—";
+  const aiStatusText = metrics
+    ? metrics.open_slots > 0
+      ? `${metrics.open_slots} open ${metrics.open_slots === 1 ? "slot" : "slots"} detected • ${metrics.patients_waiting} ${metrics.patients_waiting === 1 ? "patient" : "patients"} waiting to be matched`
+      : `All slots filled • ${metrics.patients_waiting} ${metrics.patients_waiting === 1 ? "patient" : "patients"} on the waiting list`
+    : `${openings.length} open ${openings.length === 1 ? "slot" : "slots"} in this view • patient-matching data unavailable`;
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <div><p className="eyebrow">MAKE ROOM FOR BETTER CARE</p><h1>Appointments</h1><p>A clear view of your clinic’s day, one appointment at a time.</p></div>
+        <h1>Appointments</h1>
         <div className={styles.actions}>
           <button className={styles.secondary} onClick={() => { setImportError(""); if (fileInput.current) fileInput.current.value = ""; importDialog.current?.showModal(); }}>Import appointments</button>
           <button className={styles.primary} onClick={() => edit()}><span aria-hidden="true">＋</span> Add appointment</button>
         </div>
       </header>
-      <div className={styles.preview}><span className={styles.previewDot} /> Sample schedule <span>Explore freely. Changes reset when you leave or refresh.</span></div>
-      {openings.length > 0 && <section className={styles.openSlots} aria-labelledby="open-slots-heading">
-        {sampleBanner}
-        <div className={styles.openSlotsHeading}><div><h2 id="open-slots-heading">An opening. An opportunity for care.</h2><p>{openings.length} {openings.length === 1 ? "cancelled appointment" : "cancelled appointments"} in this calendar view · {usingSample ? "Sample recovery flow" : "Live recovery"}</p></div><Icon name="recovery" /></div>
-        <div className={styles.openSlotsList}>{openings.map((slot) => <article key={slot.id} className={styles.openSlot} aria-label={`Opening from ${slot.patient}`}>
-          <div><h3>{dateLabel(slot.date, { weekday: "short", month: "short", day: "numeric" })} · {timeLabel(slot.time)}</h3><p>{slot.visitType} · {slot.duration} min · {slot.provider}</p><span>Cancelled by {slot.patient}</span></div>
-          <button type="button" className={styles.primary} onClick={() => setRecoveryId(slot.id)} aria-label={`Find matching patients for ${slot.patient}’s cancelled appointment`}>Find matching patients <span aria-hidden="true">→</span></button>
-        </article>)}</div>
+
+      <div className={styles.statsRow}>
+        <div className={styles.stat}><span className={styles.statLabel}>Open slots</span><span className={styles.statValue}>{metrics?.open_slots ?? "—"}</span></div>
+        <div className={styles.stat}><span className={styles.statLabel}>Booked</span><span className={styles.statValue}>{metrics?.booked ?? "—"}</span></div>
+        <div className={styles.stat}><span className={styles.statLabel}>Fill rate</span><span className={styles.statValue}>{fillRateLabel}</span></div>
+      </div>
+
+      <div className={styles.aiBar} role="status">
+        <span className={styles.aiBarDot} aria-hidden="true" />
+        <Icon name="recovery" />
+        <span>{aiStatusText}{usingSample ? " • sample data, API unreachable" : ""}</span>
+      </div>
+
+      {openings.length > 0 && <section className={styles.openSlots} aria-label="Open slots">
+        <div className={styles.openSlotsHeading}><Icon name="recovery" /> {openings.length} {openings.length === 1 ? "opening" : "openings"}</div>
+        <div className={styles.openSlotsList}>{openings.map((slot) => <div key={slot.id} className={styles.openSlot}>
+          <span>{dateLabel(slot.date, { weekday: "short", month: "short", day: "numeric" })} · {timeLabel(slot.time)}</span>
+          <em>{slot.visitType} · {slot.provider} · cancelled by {slot.patient}</em>
+          <button type="button" className={styles.secondary} onClick={() => setRecoveryId(slot.id)} aria-label={`Find matching patients for ${slot.patient}’s cancelled appointment`}>Find matches →</button>
+        </div>)}</div>
       </section>}
       {recoveryAppointment && <RecoveryPanel key={recoveryAppointment.id} appointment={recoveryAppointment} slotId={(recoveryAppointment as Appointment & { serverId?: number }).serverId} onClose={() => setRecoveryId(null)} />}
       <section className={styles.calendar} aria-label="Weekly appointment calendar">
@@ -187,7 +218,7 @@ export function AppointmentCalendar() {
           </div>
           <label className={styles.filter}><span className="sr-only">Filter by provider</span><select aria-label="Filter by provider" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="all">All providers</option>{providers.map((name) => <option key={name}>{name}</option>)}</select><span className={styles.weekBadge}>Week view</span></label>
         </div>
-        <div className={styles.calendarMeta}><span>{visible.filter((event) => event.status === "booked").length} booked · {visible.filter((event) => event.status === "cancelled").length} cancelled</span><span>Local time · 8 AM–6 PM</span></div>
+        <div className={styles.calendarMeta}><span>{visible.filter((event) => event.status === "booked").length} booked · {visible.filter((event) => event.status === "cancelled").length} open</span><span>Local time · 8 AM–6 PM</span></div>
         <div className={styles.scroll} tabIndex={0} role="region" aria-label="Calendar. Scroll horizontally on smaller screens.">
           <div className={styles.weekGrid}>
             <div className={styles.dayHeaders}><div className={styles.timeHeading}><Icon name="calendar" /></div>{days.map((day) => <div key={day} className={`${styles.dayHeading} ${day === today ? styles.today : ""}`}><span>{dateLabel(day, { weekday: "short" })}</span><strong>{dateLabel(day, { day: "numeric" })}</strong>{day === today && <span className="sr-only">Today</span>}</div>)}</div>
@@ -195,17 +226,17 @@ export function AppointmentCalendar() {
               <div className={styles.timeColumn}>{hours.map((hour) => <div key={hour}>{timeLabel(`${hour}:00`).replace(":00", "")}</div>)}</div>
               {days.map((day) => <div key={day} className={`${styles.dayColumn} ${day === today ? styles.todayColumn : ""}`}>
                 {hours.map((hour) => <button key={hour} className={styles.slot} aria-label={`Add appointment on ${dateLabel(day, { weekday: "long", month: "long", day: "numeric" })} at ${timeLabel(`${hour}:00`)}`} onClick={() => edit(undefined, day, `${String(hour).padStart(2, "0")}:00`)} />)}
-                {arrange(visible.filter((event) => event.date === day)).map(({ event, lane, lanes }) => <button key={event.id} className={`${styles.event} ${event.status === "cancelled" ? styles.cancelled : styles.booked}`} style={{ top: (minutes(event.time) - 480) * 1.4, height: Math.max(event.duration * 1.4 - 4, 18), left: `calc(${lane / lanes * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)` }} onClick={() => edit(event)} aria-label={`${event.patient}, ${event.visitType}, ${event.provider}, ${timeLabel(event.time)}, ${event.status}. Edit appointment`} title={`${event.patient} · ${event.provider} · ${timeLabel(event.time)} · ${event.duration} min · ${event.status}`}>
-                  <strong>{event.patient}</strong>{event.duration >= 30 && <span>{event.visitType}</span>}{event.duration >= 45 && <span>{timeLabel(event.time)} · {event.duration} min</span>}{event.duration >= 60 && <span className={styles.eventProvider}>{event.status === "cancelled" ? "Cancelled" : event.provider}</span>}
+                {arrange(visible.filter((event) => event.date === day)).map(({ event, lane, lanes }) => <button key={event.id} className={`${styles.event} ${event.status === "cancelled" ? styles.cancelled : styles.booked}`} style={{ top: (minutes(event.time) - 480) * 1.2, height: Math.max(event.duration * 1.2 - 4, 16), left: `calc(${lane / lanes * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)` }} onClick={() => edit(event)} aria-label={`${event.patient}, ${event.visitType}, ${event.provider}, ${timeLabel(event.time)}, ${event.status}. Edit appointment`} title={`${event.patient} · ${event.provider} · ${timeLabel(event.time)} · ${event.duration} min · ${event.status}`}>
+                  <strong>{event.patient}</strong>{event.duration >= 30 && <span>{event.visitType}</span>}{event.duration >= 45 && <span>{timeLabel(event.time)} · {event.duration} min</span>}{event.duration >= 60 && <span className={styles.eventProvider}>{event.status === "cancelled" ? "Open" : event.provider}</span>}
                 </button>)}
               </div>)}
             </div>
           </div>
         </div>
-        <footer className={styles.legend}><span><i /> Booked</span><span><i className={styles.cancelledDot} /> Cancelled</span><span className={styles.hint}>Click an open time to add. Click an appointment to edit.</span></footer>
+        <footer className={styles.legend}><span><i /> Booked</span><span><i className={styles.cancelledDot} /> Open</span><span className={styles.hint}>Click an open time to add. Click an appointment to edit.</span></footer>
       </section>
       {visible.length === 0 && <p className={styles.empty}>No appointments for this week{provider !== "all" ? ` with ${provider}` : ""}. Choose an open time to add one.</p>}
-      <p className={styles.notice} role="status">{notice}</p>
+      {notice && <p className={styles.notice} role="status">{notice}</p>}
 
       <dialog ref={dialog} className={styles.dialog} aria-labelledby="appointment-title" onClose={() => setDraft(null)}>
         {draft && <form onSubmit={save} key={draft.id || `${draft.date}-${draft.time}`}>
