@@ -7,26 +7,18 @@ const path = require("path");
 // arrive as build env vars instead - and dotenv is a no-op when it is missing.
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
+// Where the deployed API actually lives. The browser never sees this value:
+// requests go to /api on the frontend's own origin and Next proxies them
+// server side (see rewrites below).
+const API_ORIGIN =
+  process.env.API_PROXY_TARGET || "https://slotsaver-api.onrender.com";
+
 // Vars must be listed here to be inlined into the client bundle, but listing
 // one that is undefined inlines the literal `undefined` and defeats the `??`
 // fallbacks at the use sites, so only defined values are passed through.
 const publicEnv = {};
 for (const key of ["NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_ELEVENLABS_AGENT_ID"]) {
   if (process.env[key]) publicEnv[key] = process.env[key];
-}
-
-// When the frontend and API share one origin, NEXT_PUBLIC_API_URL can be left
-// unset and the client uses relative paths (lib/constants.ts). On Vercel they
-// are NOT on one origin, so an unset value silently produces a dashboard that
-// fetches itself and renders nothing. Fail the production build instead -
-// previews still build, so UI work is not blocked.
-if (process.env.VERCEL && !process.env.NEXT_PUBLIC_API_URL) {
-  const message =
-    "NEXT_PUBLIC_API_URL is not set. On Vercel the API is on a different " +
-    "origin, so it must point at the deployed API (e.g. the Koyeb URL). " +
-    "Set it in Project Settings -> Environment Variables and redeploy.";
-  if (process.env.VERCEL_ENV === "production") throw new Error(message);
-  console.warn(`\n[next.config] WARNING: ${message}\n`);
 }
 
 /** @type {import('next').NextConfig} */
@@ -36,6 +28,28 @@ const nextConfig = {
   // Vercel builds its own output format and does not want this.
   output: process.env.VERCEL ? undefined : "standalone",
   env: publicEnv,
+
+  // Same-origin proxy to the API.
+  //
+  // The frontend and the API are deployed to different hosts, so the browser
+  // would normally send cross-origin requests and the API would have to return
+  // the right CORS headers. That puts a load-bearing setting in a dashboard,
+  // invisible in this repo, and it fails silently when wrong: the dashboard
+  // renders and then fetches nothing, which is exactly what happened.
+  //
+  // Proxying removes the problem instead of configuring around it. The browser
+  // only ever talks to this origin, so there is no preflight and no CORS header
+  // to get wrong, and the API URL stops being baked into the client bundle at
+  // build time, which also means it can change without a rebuild.
+  //
+  // NEXT_PUBLIC_API_URL should now be UNSET in production: lib/constants.ts
+  // then falls back to relative paths, which this proxy resolves.
+  async rewrites() {
+    return [
+      { source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` },
+      { source: "/health", destination: `${API_ORIGIN}/health` },
+    ];
+  },
 };
 
 module.exports = nextConfig;

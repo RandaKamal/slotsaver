@@ -1,0 +1,48 @@
+name: Keep the API warm
+
+# Render's free tier spins a service down after 15 minutes without inbound
+# traffic and takes about a minute to wake. During a live phone call that is a
+# minute of silence while the agent waits on a tool call, which is the most
+# likely way this demo fails in front of someone.
+#
+# Pinging /health on a schedule keeps the instance up. The free tier allows 750
+# instance hours a month and a month is about 744, so one always-warm service
+# fits, and only one.
+#
+# GitHub does not guarantee schedule precision and may delay or drop runs under
+# load, so this is best effort. It is still far better than a cold start, and it
+# needs no account anyone has to remember to keep.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wake the API
+        run: |
+          # A cold instance can take ~60s to answer, so allow generously and
+          # retry once rather than failing the run on a single slow wake.
+          for attempt in 1 2; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+                        --max-time 120 \
+                        https://slotsaver-api.onrender.com/health || echo 000)
+            echo "attempt $attempt -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "API did not return 200 after two attempts"
+          exit 1
