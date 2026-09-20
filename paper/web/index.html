@@ -91,12 +91,12 @@
 <h1>The Output Budget Confound</h1>
 <p class="sub">Why token ceilings silently decide LLM planning benchmark results</p>
 <div class="byline">
-  <span>SlotSaver Team</span><span>SteelHacks 2026</span><span>Preprint</span>
+  <span>Kevin Doshi &middot; Randa Kamal &middot; Zaid Hanif</span><span>SteelHacks 2026</span><span>Preprint</span>
 </div>
 
 <div class="abstract">
 <p>Comparisons between language models on planning benchmarks are usually reported as a single accuracy number per model. We show that for models which reason in the open, this number is not a property of the model alone. It is jointly determined by the output token ceiling the evaluator happened to choose.</p>
-<p>On the Calendar Scheduling task of <b>NATURAL PLAN</b>, raising the ceiling from 512 to 4096 tokens moves Nemotron Super from <b>1.5%</b> to <b>84.7%</b> with the prompt, the sample and the scoring held fixed. The model was not failing to plan. At the lower ceiling <b>98.5%</b> of its generations were cut off before an answer existed, and an exact match scorer recorded that truncation as a planning error.</p>
+<p>On the Calendar Scheduling task of <b>NATURAL PLAN</b>, raising the ceiling from 512 to 4096 tokens moves Nemotron Super from <b>1.5%</b> to <b>84.6%</b> with the prompt, the sample and the scoring held fixed. The model was not failing to plan. At the lower ceiling <b>98.5%</b> of its generations were cut off before an answer existed, and an exact match scorer recorded that truncation as a planning error.</p>
 </div>
 
 <h2>The finding</h2>
@@ -125,7 +125,7 @@
     <tr><td>Nemotron Super</td><td>512</td><td class="hi">1.5%</td><td>98.5%</td><td>100.0%</td><td>65</td><td>0</td></tr>
     <tr><td>Nemotron Super</td><td>1024</td><td>17.5%</td><td>82.5%</td><td>85.7%</td><td>40</td><td>20</td></tr>
     <tr><td>Nemotron Super</td><td>2048</td><td>48.1%</td><td>48.1%</td><td>85.7%</td><td>27</td><td>33</td></tr>
-    <tr><td>Nemotron Super</td><td>4096</td><td class="hi">84.7%</td><td>10.2%</td><td>94.3%</td><td>59</td><td>6</td></tr>
+    <tr><td>Nemotron Super</td><td>4096</td><td class="hi">84.6%</td><td>10.8%</td><td>94.8%</td><td>65</td><td>0</td></tr>
     <tr><td>Claude Haiku 4.5</td><td>512</td><td>46.2%</td><td>46.2%</td><td>82.9%</td><td>65</td><td>0</td></tr>
     <tr><td>Claude Haiku 4.5</td><td>1024</td><td>78.3%</td><td>3.3%</td><td>81.0%</td><td>60</td><td>0</td></tr>
     <tr><td>Claude Haiku 4.5</td><td>2048</td><td>68.3%</td><td>0.0%</td><td>68.3%</td><td>60</td><td>0</td></tr>
@@ -157,7 +157,7 @@
 
 <div class="flag">
   <span class="tag">The result we did not want</span>
-  <p>At a matched ceiling, exact McNemar tests on paired per item outcomes separate <b>none</b> of the model pairs. Nemotron against Claude is 10 versus 7 discordant items out of 59 paired. We report this because an earlier version of our own analysis counted provider rate limit errors as wrong answers and produced a confident <code>p &lt; 0.0001</code> that was entirely infrastructure noise.</p>
+  <p>At a matched ceiling, exact McNemar tests on paired per item outcomes separate <b>none</b> of the model pairs. Nemotron against Claude is 10 versus 7 discordant items out of 65 paired. We report this because an earlier version of our own analysis counted provider rate limit errors as wrong answers and produced a confident <code>p &lt; 0.0001</code> that was entirely infrastructure noise.</p>
 </div>
 
 <p>Run to run variation reinforces the caution. Nemotron at temperature zero scored 98.3% of items identically across two independent seeded runs. Claude, which we could not pin to temperature zero because its SDK no longer exposes the parameter, agreed on only 62.5%. A single accuracy figure for a model at a nondeterministic temperature is a draw from a distribution whose spread is not small.</p>
