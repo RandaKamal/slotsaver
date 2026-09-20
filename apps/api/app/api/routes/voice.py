@@ -5,10 +5,22 @@ from sqlalchemy.orm import Session
 
 from app.db.models.preference import PreferenceRecord
 from app.db.session import get_db
-from app.schemas.appointment import AppointmentSlot, BookAppointmentRequest, BookedAppointment
+from app.schemas.appointment import (
+    AppointmentSlot,
+    BookAppointmentRequest,
+    BookedAppointment,
+    CancelAppointmentRequest,
+)
 from app.schemas.memory import PreferenceRecordResponse, VoicePreferenceRequest
-from app.services.appointment_service import TimeOfDay, book_slot, get_available_slots
+from app.services.appointment_service import (
+    TimeOfDay,
+    appointments_for,
+    book_slot,
+    cancel_slot,
+    get_available_slots,
+)
 from app.services.preference_service import run_extraction, save_pending_record
+from app.services.recovery_service import recover_freed_slot
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 
@@ -80,3 +92,46 @@ def book_appointment(
         price=appointment.price,
         status=appointment.status,
     )
+
+
+@router.get("/my-appointments", response_model=list[AppointmentSlot])
+def my_appointments(
+    patient_id: str, db: Session = Depends(get_db)
+) -> list[AppointmentSlot]:
+    """Called by the ElevenLabs `get_my_appointments_call` tool.
+
+    The agent needs this before it can cancel anything - it has to know what
+    the patient actually has booked rather than asking them for a slot id.
+    """
+
+    return [AppointmentSlot.model_validate(a) for a in appointments_for(db, patient_id)]
+
+
+@router.post("/cancel")
+def cancel_appointment(
+    payload: CancelAppointmentRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Called by the ElevenLabs `cancel_appointment_call` tool.
+
+    This is the event the whole product exists to react to. Cancelling frees
+    the slot and immediately kicks off recovery in the background: find who
+    else wants it, rank them, and queue the best match for owner approval.
+
+    Recovery runs as a background task because ranking plus the incentive and
+    call-brief decisions take ~20-30s of model time, and the patient is on the
+    phone waiting to hear "that's cancelled".
+    """
+
+    appointment = cancel_slot(db, payload.patient_id, payload.slot_id)
+    background_tasks.add_task(recover_freed_slot, appointment.id)
+
+    return {
+        "cancelled": True,
+        "slot_id": appointment.id,
+        "provider": appointment.provider,
+        "service": appointment.service,
+        "start_time": appointment.start_time.isoformat(),
+        "message": "Appointment cancelled. The clinic will try to offer this slot to another patient.",
+    }

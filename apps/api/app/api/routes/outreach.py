@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.db.models.appointment import Appointment
 from app.db.models.outreach import OutreachAttempt
 from app.services.call_service import CallNotConfigured, place_call
+from app.services.patient_memory import build_patient_brief
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/outreach", tags=["outreach"])
@@ -101,7 +102,7 @@ def approve(attempt_id: int, payload: DecisionRequest, db: Session = Depends(get
         else None
     )
     try:
-        place_call(attempt, slot)
+        place_call(attempt, slot, build_patient_brief(db, attempt.patient_id))
         attempt.status = "placed"
     except CallNotConfigured as exc:
         logger.info("attempt %s approved but not callable yet: %s", attempt_id, exc)

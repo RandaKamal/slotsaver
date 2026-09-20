@@ -41,7 +41,7 @@ class CallNotConfigured(Exception):
     """Raised when Twilio/ElevenLabs telephony isn't set up yet."""
 
 
-def _dynamic_variables(attempt, slot: dict | None) -> dict:
+def _dynamic_variables(attempt, slot: dict | None, patient_brief: str | None = None) -> dict:
     """Call context the phone agent's prompt interpolates.
 
     Without these the agent knows it is on a call but not why, and falls back
@@ -63,6 +63,7 @@ def _dynamic_variables(attempt, slot: dict | None) -> dict:
         if points
         else "- They asked to be told if this slot opened up.",
         "call_tone": f"- Keep the call {brief.get('tone', 'warm')} in tone.",
+        "patient_history": patient_brief or "No previous conversations on file for this patient.",
         "incentive_line": (
             f"You may offer this incentive if they hesitate: {pitch}"
             if pitch
@@ -71,7 +72,7 @@ def _dynamic_variables(attempt, slot: dict | None) -> dict:
     }
 
 
-def place_call(attempt, slot: dict | None = None) -> dict:
+def place_call(attempt, slot: dict | None = None, patient_brief: str | None = None) -> dict:
     """attempt: an OutreachAttempt row, already approved.
 
     Raises CallNotConfigured (never a bare exception) if the phone number
@@ -101,7 +102,7 @@ def place_call(attempt, slot: dict | None = None) -> dict:
         "agent_phone_number_id": phone_number_id,
         "to_number": attempt.phone_number,
         "conversation_initiation_client_data": {
-            "dynamic_variables": _dynamic_variables(attempt, slot),
+            "dynamic_variables": _dynamic_variables(attempt, slot, patient_brief),
             "conversation_config_override": {
                 # No tool override: the phone agent already carries exactly the
                 # webhook tools a call needs.

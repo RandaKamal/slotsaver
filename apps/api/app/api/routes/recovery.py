@@ -7,8 +7,7 @@ from app.agents.nemotron.incentive import decide_incentive
 from app.agents.nemotron.ranker import rank_candidates
 from app.db.models.appointment import Appointment
 from app.db.session import get_db
-from app.services.outreach_service import evaluate_top_candidate
-from app.services.recovery_matcher import find_candidates
+from app.services.recovery_service import run_recovery
 
 router = APIRouter(prefix="/api/recovery", tags=["recovery"])
 
@@ -98,11 +97,11 @@ class CancellationRequest(BaseModel):
 def recover_from_cancellation(
     payload: CancellationRequest, db: Session = Depends(get_db)
 ) -> dict:
-    """The whole product in one call: a booked slot frees up, and we find who wants it.
+    """Frees a booked slot and runs recovery on it, synchronously.
 
-    Frees the slot, selects patients whose STORED INTENT fits it (deterministic,
-    see recovery_matcher), then has Nemotron rank the survivors. Without stored
-    intent this slot simply goes empty - nobody knows who to call.
+    Same core as a patient cancelling on a live call (POST /api/voice/cancel);
+    that path runs it in the background because someone is on the phone, this
+    one blocks because the dashboard wants the ranking back to display.
     """
     slot = db.get(Appointment, payload.slot_id)
     if slot is None:
@@ -114,61 +113,4 @@ def recover_from_cancellation(
     db.commit()
     db.refresh(slot)
 
-    eligible, excluded = find_candidates(db, slot.start_time, slot.provider)
-
-    open_slot = {
-        "slot_id": slot.id,
-        "provider": slot.provider,
-        "service_type": slot.service,
-        "start": slot.start_time.isoformat(),
-        "duration_min": slot.duration_minutes,
-        "price": slot.price,
-    }
-
-    if not eligible:
-        return {
-            "open_slot": open_slot,
-            "cancelled_by": previous_holder,
-            "eligible": [],
-            "excluded": excluded,
-            "plan_id": None,
-            "revenue_at_risk": slot.price,
-            "message": "No stored intent matches this slot - it would go unfilled.",
-        }
-
-    ranking = rank_candidates(open_slot, eligible)
-    plan_id = new_plan_id()
-    plan = {
-        "plan_id": plan_id,
-        "open_slot": open_slot,
-        "candidates": ranking["candidates"],
-        "ranked_candidate_ids": ranking["ranked_candidate_ids"],
-        "current_candidate_index": 0,
-        "stage": "NORMAL",
-        "selected_incentive": None,
-        "status": "pending",
-    }
-    RECOVERY_PLANS[plan_id] = plan
-
-    # Ranking finds who could take this slot. This decides whether calling
-    # the top match is actually worth doing, and if so, drafts the call.
-    top_id = ranking["ranked_candidate_ids"][0]
-    top_candidate = next(c for c in eligible if c["patient_id"] == top_id)
-    top_score = next(c["match_score"] for c in ranking["candidates"] if c["patient_id"] == top_id)
-    outreach = evaluate_top_candidate(db, open_slot, top_candidate, top_score, slot.price)
-
-    return {
-        **plan,
-        "cancelled_by": previous_holder,
-        "eligible": eligible,
-        "excluded": excluded,
-        "revenue_at_risk": slot.price,
-        "outreach": {
-            "id": outreach.id,
-            "should_call": outreach.should_call,
-            "reason": outreach.decision_reason,
-            "incentive": outreach.incentive,
-            "call_brief": outreach.call_brief,
-            "status": outreach.status,
-        },
-    }
+    return {**run_recovery(db, slot), "cancelled_by": previous_holder}

@@ -77,3 +77,50 @@ def book_slot(db: Session, patient_id: str, slot_id: int) -> Appointment:
         status_code=409,
         detail=f"Slot {slot_id} is no longer available (status={existing.status})",
     )
+
+
+def cancel_slot(db: Session, patient_id: str, slot_id: int) -> Appointment:
+    """Releases a booked slot back to available.
+
+    Mirrors book_slot's atomicity: the WHERE clause pins both the id and the
+    current holder, so a patient can only cancel their own appointment and two
+    concurrent cancels cannot both "succeed".
+    """
+
+    result = db.execute(
+        update(Appointment)
+        .where(
+            Appointment.id == slot_id,
+            Appointment.status == "booked",
+            Appointment.customer_id == patient_id,
+        )
+        .values(status="available", customer_id=None)
+    )
+    db.commit()
+
+    if result.rowcount == 1:
+        cancelled = db.get(Appointment, slot_id)
+        assert cancelled is not None
+        return cancelled
+
+    existing = db.get(Appointment, slot_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"No such slot: {slot_id}")
+    if existing.status != "booked":
+        raise HTTPException(
+            status_code=409, detail=f"Slot {slot_id} is not booked (status={existing.status})"
+        )
+    raise HTTPException(
+        status_code=403, detail=f"Slot {slot_id} is not booked by {patient_id}"
+    )
+
+
+def appointments_for(db: Session, patient_id: str) -> list[Appointment]:
+    """This patient's upcoming booked appointments, soonest first."""
+    stmt = (
+        select(Appointment)
+        .where(Appointment.customer_id == patient_id)
+        .where(Appointment.status == "booked")
+        .order_by(Appointment.start_time)
+    )
+    return list(db.execute(stmt).scalars().all())

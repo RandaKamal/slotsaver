@@ -22,6 +22,8 @@ TOOL_IDS = {
     "get_available_slots_call": ("tool_1301m2yb2arne1ztf3jt0js6n6dj", "/api/voice/available-slots"),
     "save_scheduling_intent_call": ("tool_7201m2yb2x9xecpty0e8z17589m1", "/api/voice/preferences"),
     "book_appointment_call": ("tool_6301m2yb2xj7e1e8z5swnjwapkx0", "/api/voice/book"),
+    "get_my_appointments_call": ("tool_9001m2ydz1nsfg9aeaw8m1qgwfyd", "/api/voice/my-appointments"),
+    "cancel_appointment_call": ("tool_1501m2ydz1xye2svy6e07kj2gbhp", "/api/voice/cancel"),
 }
 
 

@@ -22,6 +22,11 @@ class BookAppointmentRequest(BaseModel):
     slot_id: int
 
 
+class CancelAppointmentRequest(BaseModel):
+    patient_id: str
+    slot_id: int
+
+
 class BookedAppointment(BaseModel):
     """Confirmed booking details, as returned by /api/voice/book."""
 
