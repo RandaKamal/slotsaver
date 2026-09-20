@@ -206,6 +206,14 @@ applied uniformly is therefore not neutral: it penalises verbose reasoners
 specifically, and the size of the penalty is a property of the harness rather
 than of the task.
 
+\claudeName{} is not perfectly monotonic across the sweep: it dips slightly at
+an intermediate ceiling. That dip is not statistically distinguishable from
+noise on the paired items (exact McNemar, $p = 0.15$), its truncation rate is
+already zero at that ceiling so no ceiling effect is available to explain it,
+and it is the one model we could not pin to temperature zero because its SDK no
+longer exposes the parameter. We flag it rather than smooth it, and we do not
+read anything into it.
+
 Figure~\ref{fig:budget}(b) shows the mechanism directly. We record the fraction
 of generations that terminate at the ceiling rather than at a stop token. At the
 \tokenLowBudget{} token ceiling, \nemotronTruncLow{} of \nemotronName{}
