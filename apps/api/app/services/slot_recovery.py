@@ -36,6 +36,16 @@ from app.services.recovery_service import (
 
 logger = logging.getLogger(__name__)
 
+# How long a ranking_failed plan is left alone before run_recovery will try
+# ranking that cancellation again. Long enough that the autonomous scheduler
+# (POLL_INTERVAL_SECONDS, currently 3s) cannot turn a rate-limit into a retry
+# storm; short enough that a transient failure self-heals well within a demo.
+_RANKING_RETRY_AFTER_SECONDS = 30.0
+
+
+def _utcnow() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
 
 def _as_utc(value: datetime.datetime) -> datetime.datetime:
     """Appointment.cancelled_at is a plain DateTime column (no timezone=True),
@@ -69,12 +79,29 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     route, the voice-agent background task, and the autonomous scheduler), so
     if a plan already covers this exact cancellation, return it rather than
     re-ranking and creating a duplicate.
+
+    A plan whose ranking FAILED is the one exception - it does not "cover"
+    the cancellation, it records that we could not handle it yet (a 429 or a
+    Nemotron outage). Treating it as handled left the slot permanently stuck
+    on a transient error with no way back short of cancelling again. It is
+    retried instead, after a cooldown so the scheduler (which ticks every
+    few seconds) retries on a sane interval rather than hammering an
+    endpoint that is already rate-limiting us.
     """
     existing = get_latest_plan_for_slot(db, slot.id)
     if existing is not None and (
         slot.cancelled_at is None or _as_utc(existing.created_at) >= _as_utc(slot.cancelled_at)
     ):
-        return {**plan_record_to_dict(existing), "eligible": [], "excluded": [], "outreach": None}
+        retryable = (
+            existing.status == "ranking_failed"
+            and (_utcnow() - _as_utc(existing.created_at)).total_seconds() >= _RANKING_RETRY_AFTER_SECONDS
+        )
+        if not retryable:
+            return {**plan_record_to_dict(existing), "eligible": [], "excluded": [], "outreach": None}
+        logger.info(
+            "retrying ranking for slot %s: previous plan %s failed %.0fs ago",
+            slot.id, existing.plan_id, (_utcnow() - _as_utc(existing.created_at)).total_seconds(),
+        )
 
     eligible, excluded = find_candidates(db, slot.start_time, slot.provider, exclude_slot_id=slot.id)
     open_slot = slot_payload(slot)

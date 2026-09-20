@@ -103,16 +103,24 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
 
   // Real ranking when we have it; clearly-labelled fixtures when we don't
   // (locally-created slots have no server row for the backend to recover).
+  //
+  // A plan whose ranking FAILED still carries candidates - the deterministic
+  // eligibility list, which is real and worth showing - but those rows have
+  // no match_score or reason, because only Nemotron produces those. Scoring
+  // undefined gave "NaN%"; these stay null and render as "not ranked yet"
+  // rather than inventing a number the model never returned.
+  const rankingFailed = plan?.status === "ranking_failed";
   const live = plan?.candidates?.length
     ? plan.candidates.map((c) => ({
         id: c.patient_id,
         name: c.patient_id,
         initials: c.patient_id.slice(0, 2).toUpperCase(),
-        score: Math.round(c.match_score * 100),
-        reasons: [c.reason],
+        score: typeof c.match_score === "number" ? Math.round(c.match_score * 100) : null,
+        reasons: c.reason ? [c.reason] : [],
       }))
     : null;
-  const candidates = live ?? sampleCandidates(appointment);
+  const candidates: { id: string; name: string; initials: string; score: number | null; reasons: string[] }[] =
+    live ?? sampleCandidates(appointment);
   const isLive = live !== null;
   const first = candidates[0];
   const ranked = plan?.ranked_candidate_ids ?? [];
@@ -146,12 +154,14 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
         <div><h3>{appointment.visitType} · {appointment.duration} minutes</h3><p>{dateLabel(appointment.date, { weekday: "short", month: "short", day: "numeric", year: "numeric" })} at {timeLabel(appointment.time)}</p><p>{appointment.provider} · Cancelled by {appointment.patient}</p></div>
         <span className={styles.badge}>Open slot</span>
       </section>
-      <div className={styles.sectionTitle}><h3>Patients who could be a fit</h3><span>{loading ? "loading…" : `${candidates.length} ${isLive ? "matches" : "sample matches"}`}</span></div>
+      <div className={styles.sectionTitle}><h3>Patients who could be a fit</h3><span>{loading ? "loading…" : `${candidates.length} ${rankingFailed ? "eligible, unranked" : isLive ? "matches" : "sample matches"}`}</span></div>
       <p className={styles.caption}>{loading
         ? "Checking the live recovery plan for this slot…"
-        : isLive
-          ? "Ranked by Nemotron. Patients who fail a hard constraint were removed before ranking."
-          : "Ranked examples of how patient preferences can be explained."}</p>
+        : rankingFailed
+          ? "Eligibility ran and these patients qualify, but Nemotron could not rank them — no scores or ordering below. The scheduler retries on its own."
+          : isLive
+            ? "Ranked by Nemotron. Patients who fail a hard constraint were removed before ranking."
+            : "Ranked examples of how patient preferences can be explained."}</p>
       {failed && <p className={styles.caption}>Could not reach the recovery API — showing sample data instead.</p>}
       {awaitingPlan && <p className={styles.status} role="status">
         No cancellation recovery has started for this slot yet — the autonomous scheduler ticks every few seconds.{" "}
@@ -165,8 +175,8 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
       <ol className={styles.candidates} aria-label={isLive ? "Ranked patients, live status" : "Ranked sample patients"}>
         {candidates.map((candidate, index) => <li key={candidate.id} className={styles.candidate}>
           <span className={styles.rank}>{index + 1}</span><span className={styles.avatar} aria-hidden="true">{candidate.initials}</span>
-          <div className={styles.candidateBody}><h4>{candidate.name}{index === 0 && <span className={styles.topMatch}>{isLive ? "Top match" : "Top sample match"}</span>}{isLive && <span className={styles.badge}>{candidateStatusLabel(statuses[candidate.id])}</span>}</h4><ul>{candidate.reasons.map((reason) => <li key={reason}><span aria-hidden="true">✓</span>{reason}</li>)}</ul></div>
-          <div className={styles.score}><strong>{candidate.score}%</strong><span>{isLive ? "Match score" : "Example score"}</span></div>
+          <div className={styles.candidateBody}><h4>{candidate.name}{index === 0 && !rankingFailed && <span className={styles.topMatch}>{isLive ? "Top match" : "Top sample match"}</span>}{isLive && !rankingFailed && <span className={styles.badge}>{candidateStatusLabel(statuses[candidate.id])}</span>}</h4><ul>{candidate.reasons.map((reason) => <li key={reason}><span aria-hidden="true">✓</span>{reason}</li>)}</ul></div>
+          <div className={styles.score}><strong>{candidate.score === null ? "—" : `${candidate.score}%`}</strong><span>{candidate.score === null ? "Not ranked" : isLive ? "Match score" : "Example score"}</span></div>
         </li>)}
       </ol>
       {isLive && plan?.status === "pending" && currentRaw?.currently_booked_slot_id && <div className={styles.status} role="status">
