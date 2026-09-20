@@ -16,8 +16,13 @@ BS = chr(92)
 
 def main() -> int:
     tex = (PAPER / "main.tex").read_text(encoding="utf-8")
-    numbers_path = PAPER / "numbers.tex"
-    nums = numbers_path.read_text(encoding="utf-8") if numbers_path.exists() else ""
+    # Macros can be split across several generated files, so collect every one
+    # the paper inputs rather than assuming a single numbers.tex.
+    nums = ""
+    for name in re.findall(r"input\{([^}]+)\}", tex):
+        path = PAPER / (name if name.endswith(".tex") else name + ".tex")
+        if path.exists():
+            nums += path.read_text(encoding="utf-8") + "\n"
 
     defined = set(re.findall(re.escape(BS) + r"newcommand\{" + re.escape(BS) + r"([A-Za-z]+)\}", nums))
     used = set(re.findall(re.escape(BS) + r"([a-z][A-Za-z]*)\{\}", tex))

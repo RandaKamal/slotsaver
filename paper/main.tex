@@ -9,6 +9,7 @@
 \captionsetup{font=small,labelfont=bf}
 
 \input{numbers}
+\input{numbers_repl}
 
 \title{\vspace{-1.5em}\textbf{The Output Budget Confound: Why Token Ceilings\\
 Silently Decide LLM Planning Benchmark Results}}
@@ -290,6 +291,16 @@ All runs were executed on \runDate{}. The harness, the per call records
 including raw generations, and the analysis code are released alongside this
 paper. Sampling is seeded and stratified, and the seed is recorded in every
 result file. Scoring uses our validated port of the official evaluator.
+
+\paragraph{Run to run stability.} An interrupted earlier sweep had already
+scored part of the sample before it was stopped. Because sampling is seeded, the
+relaunched sweep drew the same items, giving an independent replication at no
+additional cost. Across \replPairs{} model and ceiling pairs, the two runs agreed
+on at least \replWorstAgree{} of items individually, and no pair was separable
+by a McNemar test. We report this because an evaluation that prints one accuracy
+figure per model gives a reader no way to judge how much of a reported gap is
+run to run noise, and in our case the ceiling effect is an order of magnitude
+larger than that noise while the between model differences are not.
 
 \section{Conclusion}
 
