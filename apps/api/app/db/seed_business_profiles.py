@@ -32,7 +32,7 @@ _DENTAL = dict(
         {"id": "dr-patel", "name": "Dr. Patel", "role": "Hygienist", "service_ids": ["cleaning", "followup"], "working_days": ["mon", "tue", "wed", "thu"], "start_time": "09:00", "end_time": "18:00", "breaks": [{"start": "13:00", "end": "13:30"}], "active": True},
     ],
     services=[
-        {"id": "cleaning", "name": "Cleaning", "duration_minutes": 45, "price": 120.0, "eligible_roles": ["Dentist", "Hygienist"], "buffer_minutes": 10, "allow_provider_preference": True},
+        {"id": "cleaning", "name": "Dental checkup", "duration_minutes": 45, "price": 120.0, "eligible_roles": ["Dentist", "Hygienist"], "buffer_minutes": 10, "allow_provider_preference": True},
         {"id": "consult", "name": "Consultation", "duration_minutes": 30, "price": 90.0, "eligible_roles": ["Dentist"], "buffer_minutes": 5, "allow_provider_preference": True},
         {"id": "followup", "name": "Follow-up", "duration_minutes": 30, "price": 80.0, "eligible_roles": ["Dentist", "Hygienist"], "buffer_minutes": 5, "allow_provider_preference": False},
     ],

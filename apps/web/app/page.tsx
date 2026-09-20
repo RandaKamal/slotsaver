@@ -41,7 +41,7 @@ export default async function HomePage() {
       <a className="skip-link" href="#main-content">Skip to content</a>
       <Sidebar />
       <div className="main-area">
-        <div className="topbar"><span>Workspace <span className="breadcrumb-divider">/</span> <strong>Dashboard</strong></span><span className="preview-badge">{live ? "Live data" : "UI preview"}</span></div>
+        <div className="topbar"><span>Workspace <span className="breadcrumb-divider">/</span> <strong>Dashboard</strong></span><span className="preview-badge">{live ? "Live data" : "Overview"}</span></div>
         <main id="main-content" className="dashboard">
           <header className="dashboard-header"><p className="eyebrow">A LITTLE MORE ROOM FOR CARE</p><h1>Welcome to SlotSaver.</h1><p>Let&apos;s fill some empty slots.</p></header>
           <MascotCard mascotSrc={mascotSrc} happySrc={happySrc} />
@@ -49,7 +49,7 @@ export default async function HomePage() {
           <section className="summary" aria-labelledby="outreach-heading">
             <div className="section-heading">
               <h2 id="outreach-heading">Pending outbound calls</h2>
-              <span>Nemotron decides who to call and what to say — you decide if the call happens</span>
+              <span>Nemotron decides who to call and what to say, then places the call automatically</span>
             </div>
             <OutreachQueue />
           </section>

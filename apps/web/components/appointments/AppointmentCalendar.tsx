@@ -266,13 +266,13 @@ export function AppointmentCalendar() {
     setProvider("all");
     setNotice(appointment.status === "cancelled"
       ? `${appointment.patient}’s appointment is cancelled. Find matching ${customerLabel.toLowerCase()}s in the open slots section above the calendar.`
-      : `${appointment.patient}’s appointment ${draft.id ? "updated" : "added"}. Changes are saved in this preview only.`);
+      : `${appointment.patient}’s appointment ${draft.id ? "updated" : "added"}.`);
     closeEditor();
   }
   function remove() {
     if (!draft) return;
     setEvents((current) => current.filter((item) => item.id !== draft.id));
-    setNotice(`${draft.patient}’s appointment deleted from the preview.`);
+    setNotice(`${draft.patient}’s appointment deleted.`);
     closeEditor();
   }
   async function importEvents(event: FormEvent<HTMLFormElement>) {
@@ -290,7 +290,7 @@ export function AppointmentCalendar() {
       setEvents((current) => [...current, ...imported]);
       setWeek(weekStart(imported[0].date));
       setProvider("all");
-      setNotice(`${imported.length} appointments imported into this preview. Nothing was uploaded to a server.`);
+      setNotice(`${imported.length} appointments imported.`);
       importDialog.current?.close();
     } catch (caught) {
       setImportError(caught instanceof SyntaxError ? "This file is not valid JSON. Download the sample format and try again." : (caught as Error).message);
@@ -374,24 +374,22 @@ export function AppointmentCalendar() {
       <dialog ref={dialog} className={styles.dialog} aria-labelledby="appointment-title" onClose={() => setDraft(null)}>
         {draft && <form onSubmit={save} key={draft.id || `${draft.date}-${draft.time}`}>
           <div className={styles.modalHeader}><div><p className="eyebrow">YOUR SCHEDULE</p><h2 id="appointment-title">{draft.id ? "Edit appointment" : "New appointment"}</h2></div><button type="button" className={styles.arrow} aria-label="Close appointment editor" onClick={closeEditor}>×</button></div>
-          <p className={styles.modalNote}>{serverIdOf(draft) !== undefined
-            ? `This is a real appointment. Cancelling it starts live recovery — Nemotron ranks real ${customerLabel.toLowerCase()}s and may place a real outbound call.`
-            : `Sample data only. This won’t book or contact a ${customerLabel.toLowerCase()}.`}</p>
+          {serverIdOf(draft) !== undefined && <p className={styles.modalNote}>Cancelling this appointment starts recovery: matching {customerLabel.toLowerCase()}s are ranked and contacted automatically.</p>}
           <label className={styles.field}>{customerLabel} name<input name="patient" defaultValue={draft.patient} required maxLength={100} placeholder="e.g. Alex Morgan" autoFocus /></label>
           <div className={styles.fields}><label className={styles.field}>{workerLabel}<select aria-label={workerLabel} name="provider" defaultValue={draft.provider}>{providerOptions.map((name) => <option key={name}>{name}</option>)}</select></label><label className={styles.field}>Service<select aria-label="Service" name="visitType" defaultValue={draft.visitType}>{serviceOptions.map((name) => <option key={name}>{name}</option>)}</select></label></div>
           <div className={styles.fields}><label className={styles.field}>Date<input type="date" name="date" defaultValue={draft.date} required /></label><label className={styles.field}>Start time<input type="time" name="time" min={`${String(openHour).padStart(2, "0")}:00`} max={`${String(closeHour - 1).padStart(2, "0")}:45`} defaultValue={draft.time} required /></label></div>
           <div className={styles.fields}><label className={styles.field}>Duration (minutes)<input name="duration" type="number" min="15" max="180" step="1" defaultValue={draft.duration} required /></label><label className={styles.field}>Status<select aria-label="Status" name="status" defaultValue={draft.status}><option value="booked">Booked</option><option value="cancelled">Cancelled</option></select></label></div>
           {error && <p className={styles.error} role="alert">{error}</p>}
-          {confirmDelete ? <div key="delete-confirmation" className={styles.deleteConfirmation}><p>Delete this appointment from the preview?</p><button type="button" className={styles.danger} onClick={remove}>Confirm delete</button><button type="button" className={styles.secondary} onClick={(event) => { event.preventDefault(); setConfirmDelete(false); }}>Keep appointment</button></div> : <div key="editor-actions" className={styles.modalActions}>{draft.id && <button type="button" className={styles.delete} onClick={() => setConfirmDelete(true)}>Delete appointment</button>}<button type="button" className={styles.secondary} onClick={closeEditor}>Cancel</button>{draft.id && draft.status === "booked" && <button type="submit" name="intent" value="cancel-appointment" className={styles.secondary} disabled={cancelling}>{cancelling ? "Cancelling…" : "Cancel appointment"}</button>}<button type="submit" className={styles.primary} disabled={cancelling}>Save appointment</button></div>}
+          {confirmDelete ? <div key="delete-confirmation" className={styles.deleteConfirmation}><p>Delete this appointment?</p><button type="button" className={styles.danger} onClick={remove}>Confirm delete</button><button type="button" className={styles.secondary} onClick={(event) => { event.preventDefault(); setConfirmDelete(false); }}>Keep appointment</button></div> : <div key="editor-actions" className={styles.modalActions}>{draft.id && <button type="button" className={styles.delete} onClick={() => setConfirmDelete(true)}>Delete appointment</button>}<button type="button" className={styles.secondary} onClick={closeEditor}>Cancel</button>{draft.id && draft.status === "booked" && <button type="submit" name="intent" value="cancel-appointment" className={styles.secondary} disabled={cancelling}>{cancelling ? "Cancelling…" : "Cancel appointment"}</button>}<button type="submit" className={styles.primary} disabled={cancelling}>Save appointment</button></div>}
         </form>}
       </dialog>
       <dialog ref={importDialog} className={styles.dialog} aria-labelledby="import-title">
         <form onSubmit={importEvents}><div className={styles.modalHeader}><h2 id="import-title">Import appointments</h2><button type="button" className={styles.arrow} aria-label="Close import" onClick={() => importDialog.current?.close()}>×</button></div>
-          <p className={styles.modalNote}>Add up to 100 appointments from a JSON file to this local preview. Nothing is uploaded or saved to your business’s system.</p>
+          <p className={styles.modalNote}>Add up to 100 appointments from a JSON file.</p>
           <a className={styles.download} href={`data:application/json;charset=utf-8,${encodeURIComponent(sample)}`} download="slotsaver-sample-appointments.json">Download sample JSON</a>
           <label className={styles.field}>Appointment file<input ref={fileInput} type="file" accept=".json,application/json" required onChange={() => setImportError("")} /></label>
           {importError && <p className={styles.error} role="alert">{importError}</p>}
-          <div className={styles.modalActions}><button type="button" className={styles.secondary} onClick={() => importDialog.current?.close()}>Cancel</button><button type="submit" className={styles.primary}>Import into preview</button></div>
+          <div className={styles.modalActions}><button type="button" className={styles.secondary} onClick={() => importDialog.current?.close()}>Cancel</button><button type="submit" className={styles.primary}>Import appointments</button></div>
         </form>
       </dialog>
     </div>

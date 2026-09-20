@@ -41,7 +41,7 @@ export function OutreachQueue() {
   }
 
   if (failed && !items) {
-    return <p className={styles.empty}>Could not reach the outreach queue — is the API running?</p>;
+    return <p className={styles.empty}>Could not reach the outreach queue. Try again shortly.</p>;
   }
   if (items === null) {
     return <p className={styles.empty}>Loading pending calls…</p>;

@@ -45,7 +45,7 @@ from app.db.models.preference import PreferenceRecord  # noqa: E402
 from app.db.session import Base, SessionLocal, engine  # noqa: E402
 
 PROVIDER = "Dr. Lee"
-SERVICE = "Cleaning"
+SERVICE = "Dental checkup"
 DURATION = 30
 PRICE = 120.0
 
@@ -131,7 +131,7 @@ def main() -> None:
             (
                 "Kevin",
                 "Honestly it's been ages since I've been in - I think my last "
-                "cleaning was something like 8 months ago, sorry! My son Max just "
+                "checkup was something like 8 months ago, sorry! My son Max just "
                 "started high school so things have been hectic. I'm pretty "
                 "flexible on timing, just let me know if anything opens up.",
                 {"excluded_providers": []},

@@ -58,8 +58,6 @@ export function ScoutMascot({
           ) : (
             <div className={styles.placeholder}>
               <span className={styles.wordmark}>Slot<span>Saver</span></span>
-              <span>Scout’s spot</span>
-              <small>Bunny artwork coming soon</small>
             </div>
           )}
         </div>

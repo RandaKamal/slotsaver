@@ -19,7 +19,13 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-NEMOTRON_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+# The fast model leads. A cancellation needs three or four sequential calls
+# (rank, incentive, is-this-call-worth-making, write the brief) before it can
+# dial, so per-call latency is multiplied by four before a phone ever rings -
+# on the 120B that was tens of seconds, and it is also the model NVIDIA has
+# been rate-limiting. The 30B answers the same prompts far faster and on its
+# own quota; the larger model stays in the chain below as the fallback.
+NEMOTRON_MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
 
 # NVIDIA rate-limits per MODEL, not per account: the 120B saturating does not
 # mean the key is out of budget - a smaller Nemotron on its own bucket still
@@ -31,7 +37,7 @@ NEMOTRON_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 # Deliberately NOT applied to call_nim/call_nim_json: the benchmark harness
 # and baselines.py compare NAMED models, and quietly answering as a different
 # one would corrupt exactly what they measure.
-NEMOTRON_FALLBACK_MODELS = ("nvidia/nemotron-3.5-lightning-30b-a3b",)
+NEMOTRON_FALLBACK_MODELS = ("nvidia/nemotron-3-super-120b-a12b",)
 
 nim_client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",

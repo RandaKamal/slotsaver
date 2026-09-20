@@ -32,7 +32,7 @@ export function Sidebar({ activePage = "Dashboard" }: { activePage?: string }) {
       <Link href="/" className="brand" aria-label="SlotSaver dashboard"><span className="brand-icon"><Icon name="calendar" /></span><span>Slot<span className="brand-accent">Saver</span></span></Link>
       <p className="sidebar-caption">{workspaceCaption}</p>
       <nav aria-label="Main navigation">{navigation(customerLabel).map((item) => <NavItem key={item.label} {...item} activePage={activePage} />)}</nav>
-      <div className="workspace"><span className="workspace-avatar">SS</span><div><strong>{profile?.name ?? "Your business"}</strong><span>Workspace preview</span></div></div>
+      <div className="workspace"><span className="workspace-avatar">SS</span><div><strong>{profile?.name ?? "Your business"}</strong><span>Workspace</span></div></div>
     </aside>
   );
 }

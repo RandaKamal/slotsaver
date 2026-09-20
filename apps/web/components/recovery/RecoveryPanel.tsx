@@ -93,12 +93,12 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
         <button type="button" className={styles.close} aria-label="Close recovery panel" onClick={() => dialog.current?.close()}>×</button>
       </header>
       <p id="recovery-disclaimer" className={styles.disclaimer}>{isLive
-        ? <><strong>Live recovery.</strong> Ranking, calls, timeouts and incentives shown here are the real backend state, polled every couple seconds — not a simulation.</>
-        : <><strong>Demo only.</strong> Patient matches and scores are sample data. No calls or messages will be sent.</>}</p>
+        ? <>Ranking, calls, timeouts and incentives reflect live system state, refreshed every few seconds.</>
+        : <>Matches and scores shown are sample data. No calls or messages will be sent.</>}</p>
       <ol className={styles.steps} aria-label="Recovery progress">
         <li>1 <span>Opening identified</span></li>
         <li aria-current={!plan?.candidates?.length ? "step" : undefined} className={!plan?.candidates?.length ? styles.current : ""}>2 <span>{isLive ? "Ranking candidates" : "Sample matches"}</span></li>
-        <li aria-current={plan?.candidates?.length ? "step" : undefined} className={plan?.candidates?.length ? styles.current : ""}>3 <span>{isLive ? "Live recovery" : "Demo only"}</span></li>
+        <li aria-current={plan?.candidates?.length ? "step" : undefined} className={plan?.candidates?.length ? styles.current : ""}>3 <span>{isLive ? "Outreach in progress" : "Sample data"}</span></li>
       </ol>
       <section className={styles.opening} aria-label="Cancelled appointment opening">
         <span className={styles.slotIcon}><Icon name="calendar" /></span>
@@ -112,8 +112,8 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
           ? "Eligibility ran and these patients qualify, but Nemotron could not rank them — no scores or ordering below. The scheduler retries on its own."
           : isLive
             ? "Ranked by Nemotron. Patients who fail a hard constraint were removed before ranking."
-            : "Ranked examples of how patient preferences can be explained."}</p>
-      {failed && <p className={styles.caption}>Could not reach the recovery API — showing sample data instead.</p>}
+            : "Example rankings showing how patient preferences are explained."}</p>
+      {failed && <p className={styles.caption}>Could not reach the recovery service — showing sample data instead.</p>}
       {awaitingPlan && <p className={styles.status} role="status">
         Cancellation detected — finding and ranking candidates now. Calling starts on its own as soon as they are ranked.
       </p>}
@@ -141,26 +141,26 @@ export function RecoveryPanel({ appointment, slotId, onClose }: RecoveryPanelPro
         <p><strong>Nemotron recommends calling:</strong> “{plan.outreach.call_brief.opening_line}”</p>
         {plan.outreach.call_brief.incentive_pitch && <p>Incentive to offer on the call: {plan.outreach.call_brief.incentive_pitch}</p>}
         <p>
-          {plan.outreach.status === "placed" ? "📞 Calling now — a real outbound call, placed automatically."
-            : plan.outreach.status === "completed_accepted" ? "Accepted on the call ✓"
+          {plan.outreach.status === "placed" ? "Calling now — outbound call placed automatically."
+            : plan.outreach.status === "completed_accepted" ? "Accepted on the call."
             : plan.outreach.status === "completed_declined" ? "Declined on the call — moving to the next candidate, with an incentive."
-            : plan.outreach.status === "failed" ? "Call attempt failed — check the ElevenLabs/Twilio configuration."
-            : plan.outreach.status === "approved" ? "Approved, but ElevenLabs/Twilio aren't configured on this deployment — no call was placed."
-            : "Queued — dialling automatically."}
+            : plan.outreach.status === "failed" ? "Call attempt failed — check the outbound calling configuration."
+            : plan.outreach.status === "approved" ? "Approved, but outbound calling is not configured on this deployment — no call was placed."
+            : "Queued — dialing automatically."}
         </p>
       </div>}
-      {isLive && plan?.status === "filled" && <p className={styles.status} role="status">Slot recovered — booked automatically once a candidate accepted. No owner action was required.</p>}
+      {isLive && plan?.status === "filled" && <p className={styles.status} role="status">Slot recovered — booked automatically once a candidate accepted.</p>}
       {isLive && plan?.status === "no_candidates" && <p className={styles.status} role="status">No stored intent matched this slot — it would go unfilled.</p>}
       {isLive && plan?.status === "ranking_failed" && <p className={styles.status} role="status">{plan.message ?? "Ranking failed."}</p>}
       <footer className={styles.footer}>
         <p>{isLive
           ? "The appointment stays open until a candidate accepts, an incentive is accepted, or an owner books it manually. This panel only shows live progress — closing it doesn't pause recovery."
-          : "This is a preview only — there's no real backend row for a locally-created slot to recover."}</p>
+          : "Recovery is unavailable for this appointment because it is not stored on the server."}</p>
         {ranked.length > 0 && currentIndex < ranked.length && plan?.status === "pending" && <span className={styles.badge}>Currently offered: {ranked[currentIndex]}</span>}
       </footer>
       <p className={styles.integration}>{isLive
-        ? <>Nemotron supplied these rankings live{plan?.revenue_at_risk ? ` · $${plan.revenue_at_risk.toFixed(0)} at risk on this slot` : ""}. The call button above places a real ElevenLabs/Twilio outbound call.</>
-        : <>Planned integration: Nemotron supplies patient rankings; ElevenLabs handles outreach.</>}</p>
+        ? <>Rankings supplied by Nemotron{plan?.revenue_at_risk ? ` · $${plan.revenue_at_risk.toFixed(0)} at risk on this slot` : ""}. Outbound calls are placed automatically through ElevenLabs and Twilio.</>
+        : <>Nemotron supplies patient rankings; ElevenLabs handles outreach.</>}</p>
     </dialog>
   );
 }

@@ -13,10 +13,12 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.db.models.appointment import Appointment
+from app.db.models.outreach import OutreachAttempt
 from app.db.models.preference import PreferenceRecord
+from app.db.models.recovery import RecoveryPlanRecord
 
 PROVIDER = "Dr. Lee"
-SERVICE = "Cleaning"
+SERVICE = "Dental checkup"
 DURATION = 30
 PRICE = 120.0
 
@@ -33,6 +35,14 @@ def _at(monday: date, day_offset: int, hour: int, minute: int = 0) -> datetime:
 def seed_dr_lee_week(db: Session) -> dict:
     appt_deleted = db.query(Appointment).delete()
     pref_deleted = db.query(PreferenceRecord).delete()
+    # Outreach attempts and recovery plans have to go too. They used to
+    # survive a reseed, and outreach_service._contact_history counts recent
+    # attempts per patient as a "do not pester them" signal - so every test
+    # run made the next one worse until decide_outreach started answering
+    # should_call=false and no call went out at all. Stale plans also keep
+    # the scheduler working on slots that no longer exist.
+    outreach_deleted = db.query(OutreachAttempt).delete()
+    plans_deleted = db.query(RecoveryPlanRecord).delete()
     db.commit()
 
     monday = _next_monday()
@@ -95,7 +105,7 @@ def seed_dr_lee_week(db: Session) -> dict:
         (
             "Kevin",
             "Honestly it's been ages since I've been in - I think my last "
-            "cleaning was something like 8 months ago, sorry! My son Max just "
+            "checkup was something like 8 months ago, sorry! My son Max just "
             "started high school so things have been hectic. I'm pretty "
             "flexible on timing, just let me know if anything opens up.",
             {"excluded_providers": []},
@@ -120,6 +130,8 @@ def seed_dr_lee_week(db: Session) -> dict:
     return {
         "cleared_appointments": appt_deleted,
         "cleared_preferences": pref_deleted,
+        "cleared_outreach_attempts": outreach_deleted,
+        "cleared_recovery_plans": plans_deleted,
         "seeded_appointments": len(SLOTS),
         "seeded_preferences": len(PREFERENCE_RECORDS),
         "week_of": monday.isoformat(),
