@@ -15,6 +15,7 @@ from app.services.recovery_service import (
     apply_incentive_decision,
     get_latest_plan_for_slot,
     get_recovery_plan_from_db,
+    offer_incentive_to_current_candidate,
     plan_record_to_dict,
     record_candidate_response,
 )
@@ -144,6 +145,22 @@ def apply_incentive(plan_id: str, db: Session = Depends(get_db)) -> dict:
     queue - nothing new to reimplement there.
     """
     plan = apply_incentive_decision(db, plan_id, get_business_policy(db))
+    if plan_id in RECOVERY_PLANS:
+        RECOVERY_PLANS[plan_id] = plan
+    return plan
+
+
+@router.post("/{plan_id}/incentive-now")
+def apply_incentive_now(plan_id: str, db: Session = Depends(get_db)) -> dict:
+    """Owner override: offer a discount to whoever is the current offer right
+    now, without waiting for the rest of the ranked list to decline first.
+
+    See recovery_service.offer_incentive_to_current_candidate - same
+    Nemotron incentive decision and the same policy gate as the automatic
+    fallback; this only changes WHEN it's allowed to run, not what it's
+    allowed to approve.
+    """
+    plan = offer_incentive_to_current_candidate(db, plan_id, get_business_policy(db))
     if plan_id in RECOVERY_PLANS:
         RECOVERY_PLANS[plan_id] = plan
     return plan

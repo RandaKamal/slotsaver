@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.agents.nemotron.incentive import decide_incentive
 from app.db.models.recovery import RecoveryPlanRecord
 from app.services.appointment_service import book_slot
-from app.services.outreach_service import evaluate_candidate, maybe_auto_call
+from app.services.outreach_service import evaluate_candidate, maybe_auto_call, place_call_for_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -334,4 +334,88 @@ def apply_incentive_decision(db: Session, plan_id: str, business_policy: dict) -
     # "exhausted" - there is nothing left to offer.
     db.commit()
     db.refresh(record)
+    return plan_record_to_dict(record)
+
+
+def offer_incentive_to_current_candidate(db: Session, plan_id: str, business_policy: dict) -> dict:
+    """Owner override: attach a discount to whoever is the CURRENT offer
+    right now, without waiting for the rest of the ranked list to be tried
+    first. apply_incentive_decision above only fires once the whole queue is
+    exhausted - this is for when an owner (or the pace of a live demo)
+    decides that's taking too long and wants to sweeten the current offer
+    immediately instead.
+
+    Same Nemotron call and the same deterministic policy gate
+    (_incentive_within_policy) as the automatic path - an owner clicking
+    this can't grant a bigger discount than the policy allows any more than
+    the automatic fallback can.
+    """
+    record = db.query(RecoveryPlanRecord).filter_by(plan_id=plan_id).first()
+    if record is None:
+        raise HTTPException(status_code=404, detail="plan not found")
+    if record.status != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail=f"plan {plan_id} has no current offer to incentivize (status={record.status})",
+        )
+
+    ranked = record.ranked_candidate_ids or []
+    idx = record.current_candidate_index
+    if idx >= len(ranked):
+        raise HTTPException(status_code=409, detail=f"plan {plan_id} has no current candidate")
+    current_patient_id = ranked[idx]
+
+    hours_until = (
+        datetime.datetime.fromisoformat(record.open_slot["start"]) - datetime.datetime.now()
+    ).total_seconds() / 3600
+    statuses = dict(record.candidate_statuses or {})
+    decline_history = [
+        {"patient_id": pid, "response": statuses.get(pid, "declined")} for pid in ranked[:idx]
+    ]
+
+    decision = decide_incentive(
+        open_slot={**record.open_slot, "hours_until_appointment": round(hours_until, 1)},
+        business_policy=business_policy,
+        decline_history=decline_history,
+    )
+
+    slot_price = record.open_slot.get("price", 0)
+    service = record.open_slot.get("service_type", "")
+    compliant, violation = _incentive_within_policy(decision, business_policy, slot_price, service)
+    if not compliant:
+        decision = {
+            "decision": "stop_recovery",
+            "chosen_incentive": None,
+            "reasoning": f"Model's choice was rejected by policy: {violation}",
+            "rerank_required": False,
+        }
+
+    record.selected_incentive = decision
+    record.stage = "INCENTIVE"
+    record.message = decision.get("reasoning")
+    db.commit()
+    db.refresh(record)
+
+    if decision.get("decision") == "offer_incentive":
+        current_candidate = next(
+            (c for c in (record.candidates or []) if c.get("patient_id") == current_patient_id), None
+        )
+        if current_candidate is not None:
+            outreach = evaluate_candidate(
+                db,
+                record.open_slot,
+                current_candidate,
+                current_candidate.get("match_score", 0.0),
+                record.revenue_at_risk or 0.0,
+                incentive_override=decision,
+                business_policy=business_policy,
+            )
+            # An explicit owner click, not the automatic-on-decline path -
+            # this places the call immediately regardless of
+            # recovery_rules.auto_call_enabled, the same as clicking
+            # Approve on any other outreach attempt.
+            if outreach.should_call:
+                outreach.status = "approved"
+                place_call_for_attempt(db, outreach)
+
     return plan_record_to_dict(record)
