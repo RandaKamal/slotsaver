@@ -34,6 +34,13 @@ class ModelResult:
     latency_s: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
+    # Authoritative truncation signal from the vendor. Counting emitted tokens
+    # and comparing against the ceiling is NOT reliable: a model that reasons in
+    # hidden "thinking" tokens spends the budget without those tokens appearing
+    # in the visible output count, so the naive check reports no truncation on
+    # exactly the models where truncation matters most.
+    finish_reason: str | None = None
+    thinking_tokens: int = 0
     error: str | None = None
     meta: dict = field(default_factory=dict)
 
@@ -85,6 +92,7 @@ def run_nemotron(prompt: str, max_tokens: int = 1024, temperature: float = 0.0) 
             latency_s=elapsed,
             input_tokens=getattr(usage, "prompt_tokens", 0),
             output_tokens=getattr(usage, "completion_tokens", 0),
+            finish_reason=str(getattr(response.choices[0], "finish_reason", "") or ""),
         )
     except Exception as exc:  # noqa: BLE001 - recorded, never fatal to a run
         return ModelResult(error=f"{type(exc).__name__}: {exc}")
@@ -115,6 +123,7 @@ def run_claude(prompt: str, max_tokens: int = 1024, temperature: float = 0.0) ->
             latency_s=elapsed,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
+            finish_reason=str(getattr(response, "stop_reason", "") or ""),
             meta={"temperature": "api_default (not settable in anthropic 1.7.0)"},
         )
     except Exception as exc:  # noqa: BLE001
@@ -165,11 +174,19 @@ def run_gemini(prompt: str, max_tokens: int = 1024, temperature: float = 0.0) ->
             ),
         )
         um = getattr(response, "usage_metadata", None)
+        cands = getattr(response, "candidates", None) or []
+        finish = str(getattr(cands[0], "finish_reason", "") or "") if cands else ""
+        # thoughts_token_count is billed against max_output_tokens but is absent
+        # from candidates_token_count, which is why the token proxy under-reports
+        # truncation for this model.
+        thinking = getattr(um, "thoughts_token_count", 0) or 0
         return ModelResult(
             text=response.text or "",
             latency_s=elapsed,
             input_tokens=getattr(um, "prompt_token_count", 0) or 0,
             output_tokens=getattr(um, "candidates_token_count", 0) or 0,
+            finish_reason=finish,
+            thinking_tokens=thinking,
         )
     except Exception as exc:  # noqa: BLE001
         return ModelResult(error=f"{type(exc).__name__}: {exc}")

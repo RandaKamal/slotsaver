@@ -120,6 +120,8 @@ def main() -> None:
                     "num_days": str(item["num_days"]),
                     "solved": bool(res.text) and is_solved(res.text, item["golden_plan"]),
                     "latency_s": round(res.latency_s, 3),
+                    "finish_reason": res.finish_reason,
+                    "thinking_tokens": res.thinking_tokens,
                     "input_tokens": res.input_tokens,
                     "output_tokens": res.output_tokens,
                     "error": res.error,

@@ -107,8 +107,25 @@ def _tidy(ax):
     ax.spines["right"].set_visible(False)
 
 
+# Vendor strings that mean "stopped because the ceiling was reached".
+_TRUNC_REASONS = {"length", "max_tokens", "MAX_TOKENS", "FinishReason.MAX_TOKENS"}
+
+
 def truncated(r, budget):
-    return r["output_tokens"] >= budget
+    """Prefer the vendor's finish reason; fall back to the token count.
+
+    The fallback is not equivalent. A model whose reasoning happens in hidden
+    thinking tokens spends the ceiling without those tokens appearing in the
+    visible output count, so the fallback reports no truncation precisely where
+    truncation is worst. Records produced before finish_reason was captured use
+    the fallback, and for the two models whose reasoning is visible its verdict
+    matches the ceiling exactly.
+    """
+    reason = r.get("finish_reason")
+    if reason:
+        return str(reason) in _TRUNC_REASONS or "MAX_TOKENS" in str(reason)
+    spent = r["output_tokens"] + (r.get("thinking_tokens") or 0)
+    return spent >= budget
 
 
 def truncation_rate(rows, budget):

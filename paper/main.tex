@@ -31,9 +31,12 @@ raising the ceiling from \tokenLowBudget{} to \tokenHighBudget{} tokens moves
 sample and the scoring held fixed. The model was not failing to plan. At the
 lower ceiling \nemotronTruncLow{} of its generations were cut off before an
 answer was emitted, and an exact match scorer recorded that truncation as a
-planning error. We quantify the effect across three tier matched models, show
-that its size tracks how verbosely a model reasons, and separate it from test
-time compute scaling by reporting the truncation rate alongside accuracy. We
+planning error. We quantify the effect across tier matched models, show that its
+size tracks how verbosely a model reasons, and separate it from test time
+compute scaling by reporting the truncation rate alongside accuracy. We further
+show that the obvious way to detect truncation, comparing emitted tokens against
+the ceiling, is unsound for models that reason in hidden tokens and fails in the
+direction of understating them. We
 argue that the generation ceiling is a confound evaluation reports must state,
 and that a truncation rate materially above zero invalidates the accuracy number
 it accompanies. We release the harness and the per call records.
@@ -69,13 +72,19 @@ fault.
 \paragraph{Contributions.}
 \begin{enumerate}\itemsep2pt
 \item We isolate the generation ceiling as an experimental variable on
-      \textsc{Natural Plan} Calendar Scheduling and measure its effect across
-      three tier matched models.
-\item We show the effect is not uniform across models. It is large for models
-      that reason in the open and near zero for models that do not, so a single
-      ceiling applied to every model is not a neutral experimental choice.
-\item We report accuracy jointly with output spend and latency, and we validate
-      our scorer against published numbers before reporting any comparison.
+      \textsc{Natural Plan} Calendar Scheduling and measure its effect on two
+      tier matched models chosen to sit at opposite ends of output verbosity.
+\item We show the effect is not uniform across models, so a single ceiling
+      applied to every model is not a neutral experimental choice, and we
+      separate it from test time compute scaling by reporting the truncation
+      rate and the solve rate conditional on finishing.
+\item We show that the obvious way to detect truncation, comparing emitted
+      tokens against the ceiling, is unsound for models that reason in hidden
+      tokens, and that it fails in the direction of understating them
+      (Section~\ref{sec:hidden}).
+\item We report accuracy jointly with output spend and latency, validate our
+      scorer against published numbers before reporting any comparison, and
+      quantify run to run variance from a seeded replication.
 \item We release the harness, the per call records and the analysis code.
 \end{enumerate}
 
@@ -120,12 +129,38 @@ actually scores. We therefore set shot count explicitly in all of our own runs
 rather than relying on that label.
 
 \subsection{Models}
-We compare three models matched by vendor tier rather than by parameter count:
-\nemotronName{}, a sparse mixture of experts \cite{shazeer2017outrageously} with
-\nemotronTotalParams{} total and \nemotronActiveParams{} active parameters;
-\claudeName{}; and \geminiName{}. Only the first has a published parameter
-count. We therefore do not plot accuracy against parameter count, because doing
-so for the other two would require inventing numbers.
+Our primary comparison is between two models matched by vendor tier and chosen
+because they sit at opposite ends of output verbosity, which is the axis the
+effect acts on: \nemotronName{}, a sparse mixture of experts
+\cite{shazeer2017outrageously} with \nemotronTotalParams{} total and
+\nemotronActiveParams{} active parameters, which reasons in its visible output;
+and \claudeName{}, which is comparatively terse. Only the first has a published
+parameter count, so we do not plot accuracy against parameter count, because
+doing so for the other would require inventing a number.
+
+We additionally report a small set of \geminiName{} results. These are
+preliminary and we label them as such: the free API tier for that model permits
+twenty requests per day, which is not a sample size, and we had no funded
+account. We include them only because they bear on the measurement issue in
+Section~\ref{sec:hidden}, not as a third arm of the comparison.
+
+\subsection{Detecting truncation is harder than it looks}
+\label{sec:hidden}
+The obvious way to detect that a generation hit the ceiling is to compare the
+emitted token count against it. That test is wrong for any model that reasons
+in hidden tokens. In our \geminiName{} runs, generations were visibly cut in
+mid sentence, including mid answer, while the reported output token count stood
+at roughly twenty against a ceiling of \tokenLowBudget{}. The reasoning tokens
+are billed against the ceiling but are absent from the visible output count, so
+the naive check reports no truncation precisely where truncation is worst.
+
+We flag this because it is a trap with an unpleasant shape: the check fails
+silently, it fails in the direction that makes a model look worse rather than
+better, and it fails specifically on the reasoning models this effect concerns.
+We therefore take the vendor's finish reason as authoritative wherever it is
+available, and treat any token based rule as a fallback. Our earlier analysis
+used the token rule and, on that basis alone, would have reported \geminiName{}
+as unaffected by the ceiling. The raw generations show the opposite.
 
 \subsection{Experimental controls}
 Every model receives the byte identical user prompt taken from the dataset, with
