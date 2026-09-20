@@ -228,26 +228,36 @@ export function AppointmentCalendar() {
 
     const serverId = serverIdOf(draft);
     if (isCancel && serverId !== undefined) {
-      // Real cancellation, not a local-preview edit: cancels the actual DB
-      // row, then runs the SAME ranking+incentive pipeline the autonomous
-      // scheduler would (deterministic eligibility, Nemotron ranking, the
-      // incentive gate) so the recovery panel has a live plan to show the
-      // instant it opens, rather than waiting on the next scheduler tick.
+      // Only the cancellation itself is awaited - it's a single guarded
+      // UPDATE and it's the part the owner is actually waiting on. Recovery
+      // is a CONSEQUENCE of it (Nemotron ranking, the incentive gate, the
+      // call brief: three or four model calls, tens of seconds when the
+      // endpoint is throttled), so awaiting it here froze the dialog on
+      // "Cancelling…" for the whole pipeline.
+      //
+      // It's kicked off without awaiting purely to skip the wait for the
+      // next autonomous scheduler tick - if this request fails outright the
+      // scheduler picks the freed slot up anyway. Either way the recovery
+      // panel below polls for the plan and renders its progress as it
+      // arrives, including the "starting recovery" state before one exists.
       setCancelling(true);
       setError("");
       try {
         await cancelAppointment(serverId);
-        const plan = await recoverFromCancellation(serverId);
-        setRecoveryPlans((current) => ({ ...current, [serverId]: plan }));
-        setEvents((current) => current.map((item) => item.id === draft.id ? { ...appointment, id: draft.id } : item));
-        setRecoveryId(draft.id);
-        setNotice(`${appointment.patient}’s appointment is cancelled — live recovery started below.`);
-        closeEditor();
       } catch {
         setError("Could not reach the server to cancel this appointment. Try again.");
-      } finally {
         setCancelling(false);
+        return;
       }
+      setCancelling(false);
+      setEvents((current) => current.map((item) => item.id === draft.id ? { ...appointment, id: draft.id } : item));
+      setRecoveryId(draft.id);
+      setNotice(`${appointment.patient}’s appointment is cancelled — live recovery is starting below.`);
+      closeEditor();
+
+      recoverFromCancellation(serverId)
+        .then((plan) => setRecoveryPlans((current) => ({ ...current, [serverId]: plan })))
+        .catch(() => { /* the scheduler retries this on its own; the panel polls for it */ });
       return;
     }
 
