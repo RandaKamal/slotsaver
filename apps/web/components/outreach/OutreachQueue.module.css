@@ -1,0 +1,20 @@
+.card { padding: 20px; background: #fff; border: 1px solid #e1e8f1; border-radius: 12px; margin-bottom: 14px; }
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.header h3 { font-size: 15px; font-weight: 600; color: #142c49; }
+.header p { font-size: 12px; color: #64768b; margin-top: 4px; }
+.score { padding: 4px 9px; border-radius: 5px; background: #eaf2ff; color: #226be3; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.reason { font-size: 12px; color: #56718f; background: #f8fafc; border-radius: 8px; padding: 10px 12px; margin-top: 12px; }
+.brief { margin-top: 14px; border-top: 1px solid #edf1f7; padding-top: 14px; }
+.tone { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: #226be3; background: #eaf2ff; padding: 3px 8px; border-radius: 5px; margin-bottom: 8px; }
+.opener { font-size: 13px; color: #142c49; font-style: italic; line-height: 1.6; }
+.points { margin-top: 10px; padding-left: 18px; font-size: 12px; color: #56718f; line-height: 1.9; }
+.incentive { margin-top: 8px; font-size: 12px; color: #226be3; }
+.actions { display: flex; gap: 10px; margin-top: 16px; }
+.approve { flex: 1; padding: 10px; border: 0; border-radius: 8px; background: #226be3; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; }
+.approve:hover { background: #1a56bd; }
+.reject { flex: 1; padding: 10px; border: 1px solid #dfe6f0; border-radius: 8px; background: #fff; color: #64768b; font-weight: 600; font-size: 13px; cursor: pointer; }
+.reject:hover { background: #f8fafc; }
+.done { padding: 10px; text-align: center; font-size: 12px; border-radius: 8px; margin-top: 16px; }
+.done.approved { background: #eaf9f0; color: #1f8a4c; }
+.done.rejected { background: #fbeeee; color: #b3413a; }
+.empty { padding: 24px; text-align: center; color: #64768b; font-size: 13px; background: #fff; border: 1px dashed #dfe6f0; border-radius: 12px; }

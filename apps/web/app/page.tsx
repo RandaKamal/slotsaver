@@ -5,6 +5,7 @@ import { MascotCard } from "@/components/dashboard/MascotCard";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { demoMetrics } from "@/components/dashboard/mock-data";
 import { fetchMetrics } from "@/lib/api";
+import { OutreachQueue } from "@/components/outreach/OutreachQueue";
 import type { MetricCardProps } from "@/components/dashboard/MetricCard";
 
 function publicMascot(filename: string) {
@@ -45,6 +46,13 @@ export default async function HomePage() {
           <header className="dashboard-header"><p className="eyebrow">A LITTLE MORE ROOM FOR CARE</p><h1>Welcome to SlotSaver.</h1><p>Let&apos;s fill some empty slots.</p></header>
           <MascotCard mascotSrc={mascotSrc} happySrc={happySrc} />
           <section className="summary" aria-labelledby="summary-heading"><div className="section-heading"><h2 id="summary-heading">Your clinic at a glance</h2><span>{live ? "Live from your clinic" : "Sample data"}</span></div><div className="metric-grid">{cards.map((metric) => <MetricCard key={metric.label} {...metric} />)}</div></section>
+          <section className="summary" aria-labelledby="outreach-heading">
+            <div className="section-heading">
+              <h2 id="outreach-heading">Pending outbound calls</h2>
+              <span>Nemotron decides who to call and what to say — you decide if the call happens</span>
+            </div>
+            <OutreachQueue />
+          </section>
           <p className="dashboard-footer">Fewer empty slots. Shorter wait times. More room for care.</p>
         </main>
       </div>

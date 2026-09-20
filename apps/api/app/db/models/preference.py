@@ -29,6 +29,11 @@ class PreferenceRecord(Base):
     # turns ago, etc). Optional: the tool may not send it.
     context: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Placeholder for real patient identity, which belongs to Randa's DB once
+    # it exists. Needed now because outbound recovery calls have to dial
+    # someone; captured from the voice tool when the patient gives it.
+    phone_number: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # pending -> extracted | failed. The row is written before Nemotron runs so
     # the voice agent never waits on it; a background task fills in the rest.
     status: Mapped[str] = mapped_column(String, default="pending", nullable=False)

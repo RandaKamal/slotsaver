@@ -10,6 +10,7 @@ from app.api.routes import (
     health,
     memory,
     metrics,
+    outreach,
     preferences,
     recovery,
     voice,
@@ -45,5 +46,6 @@ app.include_router(execution.router)
 app.include_router(memory.router)
 app.include_router(metrics.router)
 app.include_router(voice.router)
+app.include_router(outreach.router)
 
 app.mount("/playground", StaticFiles(directory="app/playground", html=True), name="playground")

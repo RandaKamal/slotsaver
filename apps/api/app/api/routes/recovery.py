@@ -7,6 +7,7 @@ from app.agents.nemotron.incentive import decide_incentive
 from app.agents.nemotron.ranker import rank_candidates
 from app.db.models.appointment import Appointment
 from app.db.session import get_db
+from app.services.outreach_service import evaluate_top_candidate
 from app.services.recovery_matcher import find_candidates
 
 router = APIRouter(prefix="/api/recovery", tags=["recovery"])
@@ -149,10 +150,25 @@ def recover_from_cancellation(
     }
     RECOVERY_PLANS[plan_id] = plan
 
+    # Ranking finds who could take this slot. This decides whether calling
+    # the top match is actually worth doing, and if so, drafts the call.
+    top_id = ranking["ranked_candidate_ids"][0]
+    top_candidate = next(c for c in eligible if c["patient_id"] == top_id)
+    top_score = next(c["match_score"] for c in ranking["candidates"] if c["patient_id"] == top_id)
+    outreach = evaluate_top_candidate(db, open_slot, top_candidate, top_score, slot.price)
+
     return {
         **plan,
         "cancelled_by": previous_holder,
         "eligible": eligible,
         "excluded": excluded,
         "revenue_at_risk": slot.price,
+        "outreach": {
+            "id": outreach.id,
+            "should_call": outreach.should_call,
+            "reason": outreach.decision_reason,
+            "incentive": outreach.incentive,
+            "call_brief": outreach.call_brief,
+            "status": outreach.status,
+        },
     }

@@ -19,6 +19,7 @@ _ADDITIVE: dict[str, dict[str, str]] = {
         "notify_if_opens": "BOOLEAN DEFAULT 0 NOT NULL",
         "requested_time": "VARCHAR",
         "refinement_diff": "JSON",
+        "phone_number": "VARCHAR",
     },
 }
 

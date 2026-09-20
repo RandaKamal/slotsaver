@@ -83,6 +83,7 @@ def find_candidates(
         eligible.append(
             {
                 "patient_id": record.patient_id,
+                "phone_number": record.phone_number,
                 "soft_preferences": soft,
                 "earlier_if_possible": bool((record.raw_extraction or {}).get("earlier_if_possible")),
                 "requested_time": record.requested_time,
