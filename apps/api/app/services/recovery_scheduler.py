@@ -30,6 +30,7 @@ import datetime
 import logging
 import os
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -39,7 +40,7 @@ from app.db.models.outreach import OutreachAttempt
 from app.db.models.recovery import RecoveryPlanRecord
 from app.db.session import SessionLocal
 from app.services.business_profile_service import get_recovery_rules
-from app.services.call_outcome import CallStatusUnavailable, call_has_ended
+from app.services.call_outcome import CallStatusUnavailable, call_has_ended, caller_accepted
 from app.services.recovery_service import (
     apply_incentive_decision,
     get_latest_plan_for_slot,
@@ -115,9 +116,10 @@ def _resolve_finished_calls(db: Session) -> None:
     slot for the full window. See call_outcome.py for how the outcome is
     decided (booked-by-them = accepted, ended-without-booking = declined).
 
-    An accepted call needs no action here: the phone agent booked the slot
-    through its own tool during the call, and the plan is closed out by
-    marking the attempt rather than replaying a booking that already happened.
+    An accepted call usually needs no booking here: the phone agent's own
+    tool did it during the call. When that tool could not reach this backend
+    (it is a webhook, so a laptop is unreachable), the transcript is used
+    instead and the booking is made here - see caller_accepted.
     """
     placed = db.execute(
         select(OutreachAttempt)
@@ -137,7 +139,24 @@ def _resolve_finished_calls(db: Session) -> None:
 
         slot = db.get(Appointment, attempt.slot_id)
         accepted = slot is not None and slot.status == "booked" and slot.customer_id == attempt.patient_id
-        attempt.status = "completed_accepted" if accepted else "completed_declined"
+
+        # The agent's book_appointment_call tool is a WEBHOOK, so it only
+        # reaches a publicly routable backend - running locally it fails, the
+        # agent says so on the call, and a customer who said "yes, book it"
+        # left the slot open and was then recorded as a decline. If the slot
+        # is still free, fall back to what was actually SAID on the call. The
+        # booking itself is left to record_candidate_response("accepted")
+        # below, which is the one path that also closes the plan and runs the
+        # rearrangement cascade - booking here as well would just collide
+        # with it.
+        agreed_on_call = (
+            not accepted
+            and slot is not None
+            and slot.status == "available"
+            and caller_accepted(attempt.conversation_id)
+        )
+
+        attempt.status = "completed_accepted" if (accepted or agreed_on_call) else "completed_declined"
         db.commit()
 
         plan = get_latest_plan_for_slot(db, attempt.slot_id)
@@ -153,6 +172,27 @@ def _resolve_finished_calls(db: Session) -> None:
 
         if accepted:
             logger.info("call accepted by %s; slot %s already booked", attempt.patient_id, attempt.slot_id)
+            continue
+
+        if agreed_on_call:
+            try:
+                logger.info(
+                    "%s agreed on the call but the agent's webhook tool could not "
+                    "reach this backend - booking slot %s here instead",
+                    attempt.patient_id, attempt.slot_id,
+                )
+                record_candidate_response(db, plan.plan_id, "accepted")
+            except HTTPException as exc:
+                # Someone took the slot between the call ending and now.
+                # Their booking stands; this one goes down as a decline.
+                logger.info(
+                    "could not book slot %s for %s after an accepted call: %s",
+                    attempt.slot_id, attempt.patient_id, exc.detail,
+                )
+                attempt.status = "completed_declined"
+                db.commit()
+            except Exception:
+                logger.exception("booking plan %s after an accepted call failed", plan.plan_id)
             continue
 
         try:

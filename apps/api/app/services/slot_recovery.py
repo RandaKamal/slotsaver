@@ -16,6 +16,7 @@ Assumes the slot is ALREADY free; it does not release it.
 
 import datetime
 import logging
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,6 +30,7 @@ from app.services.business_profile_service import get_recovery_rules
 from app.services.outreach_service import evaluate_candidate, maybe_auto_call
 from app.services.recovery_matcher import find_candidates
 from app.db.models.outreach import OutreachAttempt
+from app.db.models.recovery import RecoveryPlanRecord
 from app.services.recovery_service import (
     get_latest_plan_for_slot,
     offer_to_current_candidate,
@@ -43,6 +45,12 @@ logger = logging.getLogger(__name__)
 # (POLL_INTERVAL_SECONDS, currently 3s) cannot turn a rate-limit into a retry
 # storm; short enough that a transient failure self-heals well within a demo.
 _RANKING_RETRY_AFTER_SECONDS = 30.0
+
+# How long a "planning" claim blocks other planners before it is treated as
+# abandoned. Comfortably longer than a slow ranking round (the 120B model plus
+# a rate-limited retry has been measured near 40s) and short enough that a
+# crashed planner doesn't strand the slot for the whole demo.
+_PLANNING_STALE_AFTER_SECONDS = 180.0
 
 
 def _utcnow() -> datetime.datetime:
@@ -102,6 +110,30 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     if existing is not None and existing.status == "pending":
         return {**plan_record_to_dict(existing), "eligible": [], "excluded": [], "outreach": None}
 
+    # Someone else is ALREADY ranking this slot. The "does a plan exist yet"
+    # checks around this one are a check-then-act with a 20-40 second gap in
+    # the middle (eligibility + rank_candidates are model calls), and the plan
+    # row only appears at the END of it - so two callers that arrive within
+    # that window both saw "no plan", both ranked, and both started calling
+    # the same candidate list. That is the duplicate-call flood: the dashboard
+    # fires run_recovery on cancel and the autonomous scheduler picks the same
+    # freed slot up a tick later. The claim below closes the window; this is
+    # the other half of it.
+    if existing is not None and existing.status == "planning":
+        age = (_utcnow() - _as_utc(existing.created_at)).total_seconds()
+        if age < _PLANNING_STALE_AFTER_SECONDS:
+            return {**plan_record_to_dict(existing), "eligible": [], "excluded": [], "outreach": None}
+        # A claim this old means the planner that made it died mid-ranking
+        # (crash, restart, killed request). Take the slot back rather than
+        # letting one lost request strand it forever.
+        logger.info(
+            "reclaiming stale planning marker %s for slot %s (%.0fs old)",
+            existing.plan_id, slot.id, age,
+        )
+        db.delete(existing)
+        db.commit()
+        existing = get_latest_plan_for_slot(db, slot.id)
+
     if existing is not None and (
         slot.cancelled_at is None or _as_utc(existing.created_at) >= _as_utc(slot.cancelled_at)
     ):
@@ -116,6 +148,40 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
             slot.id, existing.plan_id, (_utcnow() - _as_utc(existing.created_at)).total_seconds(),
         )
 
+    # Claim the slot BEFORE the model calls, so a concurrent caller sees a
+    # marker instead of an empty table and backs off above. Committed on its
+    # own so it is visible to other sessions immediately, and cleared in the
+    # finally below however this returns.
+    claim = RecoveryPlanRecord(
+        plan_id=f"planning_{uuid4().hex[:8]}",
+        slot_id=slot.id,
+        cancelled_by=cancelled_by,
+        open_slot=slot_payload(slot),
+        candidates=[],
+        excluded=[],
+        ranked_candidate_ids=[],
+        current_candidate_index=0,
+        stage="NORMAL",
+        status="planning",
+        candidate_statuses={},
+        revenue_at_risk=slot.price,
+        message="Ranking candidates for this slot.",
+    )
+    db.add(claim)
+    db.commit()
+
+    try:
+        return _plan_and_queue(db, slot, cancelled_by)
+    finally:
+        # The real plan is a separate INSERT, so the marker is always removed
+        # rather than updated in place - including on an exception, which
+        # would otherwise leave the slot blocked until the staleness cooldown.
+        db.delete(claim)
+        db.commit()
+
+
+def _plan_and_queue(db: Session, slot: Appointment, cancelled_by: str | None) -> dict:
+    """The actual ranking and queueing, once run_recovery has claimed the slot."""
     eligible, excluded = find_candidates(db, slot.start_time, slot.provider, exclude_slot_id=slot.id)
     open_slot = slot_payload(slot)
 
