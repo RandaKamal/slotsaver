@@ -2,11 +2,30 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { fetchAppointments, type ApiAppointment } from "@/lib/api";
 import { RecoveryPanel } from "@/components/recovery/RecoveryPanel";
 import { addDays, dateLabel, minutes, providers, sampleAppointments, timeLabel, validAppointment, visitTypes, weekStart, type Appointment } from "./appointment-data";
 import styles from "./AppointmentCalendar.module.css";
 
-const hours = Array.from({ length: 10 }, (_, index) => index + 8);
+const hours = Array.from({ length: 12 }, (_, index) => index + 8);
+
+/** Backend row -> the calendar's local shape.
+ *  `serverId` is kept so a cancellation can address the real DB row; UI-created
+ *  events have no server record and simply omit it. */
+function fromApi(row: ApiAppointment): Appointment & { serverId: number } {
+  const [date, clock] = row.start_time.split("T");
+  return {
+    id: `slot-${row.id}`,
+    serverId: row.id,
+    patient: row.status === "booked" ? "Booked patient" : "Open slot",
+    provider: row.provider,
+    visitType: row.service,
+    date,
+    time: clock.slice(0, 5),
+    duration: row.duration_minutes,
+    status: row.status === "booked" ? "booked" : "cancelled",
+  };
+}
 function localToday() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -38,12 +57,27 @@ export function AppointmentCalendar() {
   const importDialog = useRef<HTMLDialogElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState("");
+  const [usingSample, setUsingSample] = useState(false);
 
   useEffect(() => {
     const date = localToday();
     setToday(date);
     setWeek(weekStart(date));
-    setEvents(sampleAppointments(date));
+
+    // Real clinic rows when the API is up; fixtures otherwise, so the calendar
+    // is never blank during a demo with the backend down.
+    const controller = new AbortController();
+    fetchAppointments(controller.signal)
+      .then((rows) => {
+        setEvents(rows.map(fromApi));
+        setUsingSample(false);
+        if (rows.length) setWeek(weekStart(rows[0].start_time.slice(0, 10)));
+      })
+      .catch(() => {
+        setEvents(sampleAppointments(date));
+        setUsingSample(true);
+      });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -115,6 +149,9 @@ export function AppointmentCalendar() {
   }
 
   if (!week) return <div className={styles.page}><h1>Appointments</h1><p role="status">Loading your calendar…</p></div>;
+  const sampleBanner = usingSample
+    ? <p role="status" className={styles.notice}>Backend unreachable — showing sample appointments. Start the API on :8000 for live clinic data.</p>
+    : null;
   const days = Array.from({ length: 7 }, (_, index) => addDays(week, index));
   const visible = events.filter((event) => days.includes(event.date) && (provider === "all" || provider === event.provider));
   const openings = visible.filter((event) => event.status === "cancelled");
@@ -132,13 +169,14 @@ export function AppointmentCalendar() {
       </header>
       <div className={styles.preview}><span className={styles.previewDot} /> Sample schedule <span>Explore freely. Changes reset when you leave or refresh.</span></div>
       {openings.length > 0 && <section className={styles.openSlots} aria-labelledby="open-slots-heading">
-        <div className={styles.openSlotsHeading}><div><h2 id="open-slots-heading">An opening. An opportunity for care.</h2><p>{openings.length} {openings.length === 1 ? "cancelled appointment" : "cancelled appointments"} in this calendar view · Sample recovery flow</p></div><Icon name="recovery" /></div>
+        {sampleBanner}
+        <div className={styles.openSlotsHeading}><div><h2 id="open-slots-heading">An opening. An opportunity for care.</h2><p>{openings.length} {openings.length === 1 ? "cancelled appointment" : "cancelled appointments"} in this calendar view · {usingSample ? "Sample recovery flow" : "Live recovery"}</p></div><Icon name="recovery" /></div>
         <div className={styles.openSlotsList}>{openings.map((slot) => <article key={slot.id} className={styles.openSlot} aria-label={`Opening from ${slot.patient}`}>
           <div><h3>{dateLabel(slot.date, { weekday: "short", month: "short", day: "numeric" })} · {timeLabel(slot.time)}</h3><p>{slot.visitType} · {slot.duration} min · {slot.provider}</p><span>Cancelled by {slot.patient}</span></div>
           <button type="button" className={styles.primary} onClick={() => setRecoveryId(slot.id)} aria-label={`Find matching patients for ${slot.patient}’s cancelled appointment`}>Find matching patients <span aria-hidden="true">→</span></button>
         </article>)}</div>
       </section>}
-      {recoveryAppointment && <RecoveryPanel key={recoveryAppointment.id} appointment={recoveryAppointment} onClose={() => setRecoveryId(null)} />}
+      {recoveryAppointment && <RecoveryPanel key={recoveryAppointment.id} appointment={recoveryAppointment} slotId={(recoveryAppointment as Appointment & { serverId?: number }).serverId} onClose={() => setRecoveryId(null)} />}
       <section className={styles.calendar} aria-label="Weekly appointment calendar">
         <div className={styles.toolbar}>
           <div className={styles.dateControls}>
