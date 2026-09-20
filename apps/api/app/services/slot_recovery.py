@@ -84,25 +84,55 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
         save_recovery_plan(db, plan, slot_id=slot.id, cancelled_by=cancelled_by)
         return {**plan, "eligible": eligible, "excluded": excluded, "outreach": None}
 
+    # Selection happens BEFORE the plan is persisted. save_recovery_plan is a
+    # plain INSERT with no upsert, so the plan is written exactly once and its
+    # status has to be correct the first time.
+    #
+    # All three lookups below read ids the MODEL chose, so none can be assumed
+    # to resolve: it can rank nobody, or name a patient that is not in the
+    # eligible set. Unguarded, that raised IndexError/StopIteration and left
+    # the slot cancelled with no outreach and nothing recorded to say why.
+    ranked_ids = ranking.get("ranked_candidate_ids") or []
+    top_candidate = None
+    top_score = None
+    if ranked_ids:
+        top_id = ranked_ids[0]
+        top_candidate = next((c for c in eligible if c["patient_id"] == top_id), None)
+        top_score = next(
+            (c["match_score"] for c in ranking.get("candidates", []) if c["patient_id"] == top_id),
+            None,
+        )
+    selection_failed = top_candidate is None or top_score is None
+
     plan = {
         "plan_id": plan_id,
         "open_slot": open_slot,
-        "candidates": ranking["candidates"],
-        "ranked_candidate_ids": ranking["ranked_candidate_ids"],
+        "candidates": ranking.get("candidates") or eligible,
+        "ranked_candidate_ids": ranked_ids,
         "current_candidate_index": 0,
         "stage": "NORMAL",
         "selected_incentive": None,
-        "status": "pending",
+        "status": "selection_failed" if selection_failed else "pending",
         "revenue_at_risk": slot.price,
     }
+    if selection_failed:
+        plan["message"] = (
+            f"Ranking returned {len(ranked_ids)} id(s) but none resolved to an "
+            "eligible candidate, so no outreach was queued."
+        )
     RECOVERY_PLANS[plan_id] = plan
     save_recovery_plan(db, plan, slot_id=slot.id, cancelled_by=cancelled_by)
 
+    if selection_failed:
+        logger.warning(
+            "slot %s: ranking produced no usable candidate (ranked=%s)", slot.id, ranked_ids
+        )
+        return {**plan, "eligible": eligible, "excluded": excluded, "outreach": None}
+
     # Ranking says who COULD take the slot; this decides whether calling the
     # top match is worth doing and drafts what the agent should say.
-    top_id = ranking["ranked_candidate_ids"][0]
-    top_candidate = next(c for c in eligible if c["patient_id"] == top_id)
-    top_score = next(c["match_score"] for c in ranking["candidates"] if c["patient_id"] == top_id)
+    outreach = evaluate_top_candidate(db, open_slot, top_candidate, top_score, slot.price)
+
     outreach = evaluate_top_candidate(db, open_slot, top_candidate, top_score, slot.price)
 
     return {

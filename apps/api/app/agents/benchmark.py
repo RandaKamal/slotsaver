@@ -67,9 +67,25 @@ def run_benchmark(max_workers: int = 12, include_slow: bool = False) -> dict:
             if "_error" in outcome:
                 row["picks"][name] = {"pick": None, "correct": False, "error": outcome["_error"]}
                 continue
-            pick = outcome["ranked_candidate_ids"][0]
+            # A call can succeed and still come back with nothing ranked (or
+            # without the key at all). The task loop above already records
+            # thrown errors; this is the same failure arriving as data, and it
+            # must not cost every other case in the run.
+            ranked = outcome.get("ranked_candidate_ids") or []
+            if not ranked:
+                row["picks"][name] = {
+                    "pick": None,
+                    "correct": False,
+                    "error": "response contained no ranked_candidate_ids",
+                }
+                continue
+            pick = ranked[0]
             reason = next(
-                (c["reason"] for c in outcome["candidates"] if c["patient_id"] == pick),
+                (
+                    c.get("reason")
+                    for c in outcome.get("candidates", [])
+                    if c.get("patient_id") == pick
+                ),
                 None,
             )
             row["picks"][name] = {
