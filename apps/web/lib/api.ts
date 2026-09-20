@@ -61,8 +61,17 @@ export interface RecoveryPlan {
   plan_id?: string | null;
   candidates?: RecoveryCandidate[];
   excluded?: ExcludedCandidate[];
+  ranked_candidate_ids?: string[];
+  candidate_statuses?: Record<string, string>;
+  current_candidate_index?: number;
+  // "pending" | "filled" | "exhausted" | "ranking_failed" | "no_candidates"
+  status?: string;
+  // "NORMAL" | "INCENTIVE"
+  stage?: string;
+  selected_incentive?: { decision?: string; chosen_incentive?: string | null; reasoning?: string | null } | null;
   revenue_at_risk?: number;
   message?: string;
+  cancelled_by?: string | null;
 }
 
 export async function recoverFromCancellation(slotId: number): Promise<RecoveryPlan> {
@@ -73,6 +82,19 @@ export async function recoverFromCancellation(slotId: number): Promise<RecoveryP
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`POST /api/recovery/from-cancellation -> ${res.status}`);
+  return res.json() as Promise<RecoveryPlan>;
+}
+
+// --- GET /api/recovery/by-slot/{slot_id} -------------------------------------
+
+/** The live recovery plan for a slot, however it was created — the autonomous
+ *  scheduler, a live phone cancellation, or the manual trigger above. Used for
+ *  polling. `null` means no cancellation has been processed for this slot yet
+ *  (a real, expected state right after a fresh cancellation), not a failure. */
+export async function fetchRecoveryPlanBySlot(slotId: number, signal?: AbortSignal): Promise<RecoveryPlan | null> {
+  const res = await fetch(`${API_URL}/api/recovery/by-slot/${slotId}`, { signal, cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET /api/recovery/by-slot/${slotId} -> ${res.status}`);
   return res.json() as Promise<RecoveryPlan>;
 }
 

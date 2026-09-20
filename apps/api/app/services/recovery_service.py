@@ -4,12 +4,18 @@ state. No ranking/reasoning here - candidates arrive already ranked; this
 only decides who the "current" offer belongs to and what happens next.
 """
 
+import datetime
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.agents.nemotron.incentive import decide_incentive
 from app.db.models.recovery import RecoveryPlanRecord
 from app.services.appointment_service import book_slot
+
+
+def _utcnow() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 def save_recovery_plan(db: Session, plan: dict, slot_id: int, cancelled_by: str | None) -> RecoveryPlanRecord:
@@ -35,11 +41,27 @@ def save_recovery_plan(db: Session, plan: dict, slot_id: int, cancelled_by: str 
         candidate_statuses=candidate_statuses,
         revenue_at_risk=plan.get("revenue_at_risk"),
         message=plan.get("message"),
+        # A real offer window starts the moment the top candidate is queued -
+        # this is what the autonomous scheduler compares against to fire a
+        # real timeout instead of waiting on a click that may never come.
+        current_offer_at=_utcnow() if ranked else None,
     )
     db.add(record)
     db.commit()
     db.refresh(record)
     return record
+
+
+def get_latest_plan_for_slot(db: Session, slot_id: int) -> RecoveryPlanRecord | None:
+    """Most recent plan for this slot, if any. Used both to let the frontend
+    discover a plan it didn't itself trigger, and by run_recovery to avoid
+    creating a second plan for a cancellation that's already being handled."""
+    return (
+        db.query(RecoveryPlanRecord)
+        .filter_by(slot_id=slot_id)
+        .order_by(RecoveryPlanRecord.created_at.desc())
+        .first()
+    )
 
 
 def plan_record_to_dict(record: RecoveryPlanRecord) -> dict:
@@ -107,15 +129,23 @@ def record_candidate_response(db: Session, plan_id: str, response: str) -> dict:
         statuses[current_patient_id] = "accepted"
         record.candidate_statuses = statuses
         record.status = "filled"
+        record.current_offer_at = None  # nothing left to time out
 
     elif response in ("declined", "timeout"):
         statuses[current_patient_id] = "declined" if response == "declined" else "expired"
         record.current_candidate_index = idx + 1
         if record.current_candidate_index >= len(ranked):
             record.status = "exhausted"
+            record.current_offer_at = None
         else:
             next_patient_id = ranked[record.current_candidate_index]
-            statuses.setdefault(next_patient_id, "offered")
+            # Unconditional, not setdefault: a candidate re-offered during the
+            # incentive round may already have "declined"/"expired" from the
+            # earlier full-price round. Being offered again must overwrite
+            # that stale status, not be suppressed by it (matches
+            # apply_incentive_decision's own first-offer assignment below).
+            statuses[next_patient_id] = "offered"
+            record.current_offer_at = _utcnow()
         record.candidate_statuses = statuses
 
     else:
@@ -219,6 +249,7 @@ def apply_incentive_decision(db: Session, plan_id: str, business_policy: dict) -
         record.status = "pending"
         statuses[ranked[0]] = "offered"
         record.candidate_statuses = statuses
+        record.current_offer_at = _utcnow()
     # continue_full_price / stop_recovery / no candidates left: status stays
     # "exhausted" - there is nothing left to offer.
 

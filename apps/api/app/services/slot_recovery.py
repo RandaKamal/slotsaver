@@ -24,7 +24,11 @@ from app.db.models.appointment import Appointment
 from app.db.session import SessionLocal
 from app.services.outreach_service import evaluate_top_candidate
 from app.services.recovery_matcher import find_candidates
-from app.services.recovery_service import save_recovery_plan
+from app.services.recovery_service import (
+    get_latest_plan_for_slot,
+    plan_record_to_dict,
+    save_recovery_plan,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,20 +50,37 @@ def run_recovery(db: Session, slot: Appointment, cancelled_by: str | None = None
     Ordering matters here. Everything deterministic (eligibility) happens and is
     persisted before any model call, so a Nemotron outage degrades to "we know
     who is eligible but could not rank them" rather than losing the whole event.
+
+    Idempotent per cancellation: this now runs from three places (the dashboard
+    route, the voice-agent background task, and the autonomous scheduler), so
+    if a plan already covers this exact cancellation, return it rather than
+    re-ranking and creating a duplicate.
     """
+    existing = get_latest_plan_for_slot(db, slot.id)
+    if existing is not None and (slot.cancelled_at is None or existing.created_at >= slot.cancelled_at):
+        return {**plan_record_to_dict(existing), "eligible": [], "excluded": [], "outreach": None}
+
     eligible, excluded = find_candidates(db, slot.start_time, slot.provider)
     open_slot = slot_payload(slot)
 
     if not eligible:
-        return {
+        plan_id = new_plan_id()
+        plan = {
+            "plan_id": plan_id,
             "open_slot": open_slot,
-            "eligible": [],
-            "excluded": excluded,
-            "plan_id": None,
+            "candidates": [],
+            "ranked_candidate_ids": [],
+            "current_candidate_index": 0,
+            "stage": "NORMAL",
+            "selected_incentive": None,
+            "status": "no_candidates",
             "revenue_at_risk": slot.price,
-            "outreach": None,
             "message": "No stored intent matches this slot - it would go unfilled.",
         }
+        # Persisted (not just returned) so the autonomous scheduler recognizes
+        # this cancellation as already handled and doesn't retry it forever.
+        save_recovery_plan(db, plan, slot_id=slot.id, cancelled_by=cancelled_by)
+        return {**plan, "eligible": [], "excluded": excluded, "outreach": None}
 
     plan_id = new_plan_id()
     try:
@@ -162,7 +183,7 @@ def recover_freed_slot(slot_id: int) -> None:
         if slot is None:
             logger.warning("freed slot %s vanished before recovery", slot_id)
             return
-        result = run_recovery(db, slot)
+        result = run_recovery(db, slot, cancelled_by=slot.last_cancelled_by)
         out = result.get("outreach")
         if out:
             logger.info(

@@ -21,18 +21,29 @@ from sqlalchemy.engine import Engine
 # Literals that differ between the two dialects we support.
 _FALSE = {"sqlite": "0", "postgresql": "FALSE"}
 _EMPTY_JSON = {"sqlite": "'{}'", "postgresql": "'{}'::json"}
+_TIMESTAMPTZ = {"sqlite": "DATETIME", "postgresql": "TIMESTAMP WITH TIME ZONE"}
+_TIMESTAMP = {"sqlite": "DATETIME", "postgresql": "TIMESTAMP"}
 
 
 @dataclass(frozen=True)
 class _Column:
     """One additive column, rendered into dialect-specific DDL on demand."""
 
-    type_name: str
+    type_name: dict[str, str] | str
     default: dict[str, str] | str | None = None
     not_null: bool = False
 
     def ddl(self, dialect: str) -> str:
-        parts = [self.type_name]
+        if isinstance(self.type_name, dict):
+            if dialect not in self.type_name:
+                raise ValueError(
+                    f"no {dialect} spelling for this column type; add one to "
+                    "app/db/migrate.py before deploying on that database"
+                )
+            type_name = self.type_name[dialect]
+        else:
+            type_name = self.type_name
+        parts = [type_name]
         if self.default is not None:
             if isinstance(self.default, dict):
                 if dialect not in self.default:
@@ -61,6 +72,11 @@ _ADDITIVE: dict[str, dict[str, _Column]] = {
     },
     "recovery_plans": {
         "candidate_statuses": _Column("JSON", default=_EMPTY_JSON, not_null=True),
+        "current_offer_at": _Column(_TIMESTAMPTZ),
+    },
+    "appointments": {
+        "cancelled_at": _Column(_TIMESTAMP),
+        "last_cancelled_by": _Column("VARCHAR"),
     },
 }
 
