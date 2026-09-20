@@ -1,0 +1,211 @@
+<title>The Output Budget Confound</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ground:#fbfbfc; --panel:#f3f4f7; --ink:#14161a; --ink-2:#464b55;
+    --ink-3:#6b7280; --rule:#e2e4e8; --rule-2:#cfd3da;
+    --accent:#2a78d6; --accent-soft:#e8f0fb; --flag:#a63d1c; --flag-soft:#fbeee9;
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#111317; --panel:#191c22; --ink:#eef0f4; --ink-2:#b6bcc7;
+      --ink-3:#8b93a1; --rule:#272c35; --rule-2:#39404c;
+      --accent:#6aa5e8; --accent-soft:#182534; --flag:#e08a68; --flag-soft:#2a1d17;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#111317; --panel:#191c22; --ink:#eef0f4; --ink-2:#b6bcc7;
+    --ink-3:#8b93a1; --rule:#272c35; --rule-2:#39404c;
+    --accent:#6aa5e8; --accent-soft:#182534; --flag:#e08a68; --flag-soft:#2a1d17;
+  }
+
+  body{background:var(--ground); color:var(--ink); font-family:var(--serif);
+       font-size:17px; line-height:1.62; margin:0;}
+  .wrap{max-width:43rem; margin:0 auto; padding-inline:20px; padding-block:64px 96px;}
+  h1,h2,h3{text-wrap:balance; line-height:1.2;}
+  h1{font-size:2.1rem; font-weight:700; letter-spacing:-.018em; margin:0 0 .5rem;}
+  h2{font-size:1.02rem; font-family:var(--mono); font-weight:600; letter-spacing:.04em;
+     text-transform:uppercase; color:var(--accent); margin:3.4rem 0 .9rem;}
+  h3{font-size:1.16rem; font-weight:600; margin:2.1rem 0 .5rem;}
+  p{margin:0 0 1.05rem;}
+  a{color:var(--accent);}
+  strong{font-weight:600;}
+
+  .sub{font-size:1.16rem; color:var(--ink-2); font-style:italic; margin:0 0 1.6rem;}
+  .byline{font-family:var(--mono); font-size:.76rem; letter-spacing:.06em;
+          text-transform:uppercase; color:var(--ink-3);
+          border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+          padding-block:.7rem; display:flex; gap:1.1rem; flex-wrap:wrap;}
+
+  .abstract{background:var(--panel); border-left:2px solid var(--accent);
+            padding:1.15rem 1.3rem; margin:2rem 0 0; font-size:.97rem;}
+  .abstract p:last-child{margin-bottom:0;}
+
+  figure{margin:2.2rem 0; }
+  figure img{width:100%; height:auto; display:block; border:1px solid var(--rule);
+             background:#fff; border-radius:2px;}
+  figcaption{font-family:var(--mono); font-size:.75rem; line-height:1.5;
+             color:var(--ink-3); margin-top:.6rem;}
+  figcaption b{color:var(--ink-2); font-weight:600;}
+
+  .scroll{overflow-x:auto; margin:1.6rem 0;}
+  table{border-collapse:collapse; width:100%; font-family:var(--mono);
+        font-size:.79rem; font-variant-numeric:tabular-nums; min-width:34rem;}
+  caption{caption-side:bottom; text-align:left; font-family:var(--mono);
+          font-size:.73rem; color:var(--ink-3); padding-top:.6rem; line-height:1.5;}
+  th,td{text-align:right; padding:.42rem .6rem; border-bottom:1px solid var(--rule);}
+  th:first-child,td:first-child{text-align:left; font-family:var(--serif); font-size:.95rem;}
+  thead th{border-bottom:1px solid var(--rule-2); color:var(--ink-2);
+           font-weight:600; font-size:.7rem; letter-spacing:.04em; text-transform:uppercase;}
+  tbody tr:last-child td{border-bottom:1px solid var(--rule-2);}
+  .hi{color:var(--accent); font-weight:600;}
+
+  .flag{border:1px solid var(--rule-2); border-left:3px solid var(--flag);
+        background:var(--flag-soft); padding:1rem 1.15rem; margin:1.8rem 0;
+        font-size:.93rem;}
+  .flag .tag{font-family:var(--mono); font-size:.68rem; letter-spacing:.08em;
+             text-transform:uppercase; color:var(--flag); display:block; margin-bottom:.4rem;}
+  .flag p:last-child{margin-bottom:0;}
+
+  pre{font-family:var(--mono); font-size:.78rem; background:var(--panel);
+      border:1px solid var(--rule); padding:.85rem 1rem; overflow-x:auto;
+      line-height:1.55; margin:1.3rem 0;}
+  code{font-family:var(--mono); font-size:.88em; color:var(--ink-2);}
+
+  ol.contrib{padding-left:1.15rem; margin:0 0 1.05rem;}
+  ol.contrib li{margin-bottom:.5rem; padding-left:.2rem;}
+
+  .refs{font-size:.86rem; color:var(--ink-2);}
+  .refs li{margin-bottom:.55rem;}
+  footer{margin-top:4rem; padding-top:1.2rem; border-top:1px solid var(--rule);
+         font-family:var(--mono); font-size:.72rem; color:var(--ink-3); line-height:1.7;}
+  @media (max-width:520px){ body{font-size:16px;} h1{font-size:1.7rem;} .wrap{padding-block:40px 64px;} }
+</style>
+
+<div class="wrap">
+
+<h1>The Output Budget Confound</h1>
+<p class="sub">Why token ceilings silently decide LLM planning benchmark results</p>
+<div class="byline">
+  <span>SlotSaver Team</span><span>SteelHacks 2026</span><span>Preprint</span>
+</div>
+
+<div class="abstract">
+<p>Comparisons between language models on planning benchmarks are usually reported as a single accuracy number per model. We show that for models which reason in the open, this number is not a property of the model alone. It is jointly determined by the output token ceiling the evaluator happened to choose.</p>
+<p>On the Calendar Scheduling task of <b>NATURAL PLAN</b>, raising the ceiling from 512 to 4096 tokens moves Nemotron Super from <b>1.5%</b> to <b>76.0%</b> with the prompt, the sample and the scoring held fixed. The model was not failing to plan. At the lower ceiling <b>98.5%</b> of its generations were cut off before an answer existed, and an exact match scorer recorded that truncation as a planning error.</p>
+</div>
+
+<h2>The finding</h2>
+
+<p>Planning under constraints is an attractive evaluation target because solutions are hard to find and cheap to verify. NATURAL PLAN scores a proposed meeting time by exact match against a golden answer, with no human annotation and no model acting as judge. That is why we chose it: it removes the failure mode where the party reporting a comparison also authored its ground truth.</p>
+
+<p>Having removed that confound, we hit another. Models differ sharply in how much text they emit before committing to an answer. A model that reasons silently answers in tens of tokens; one that reasons in the open may spend thousands. Every harness imposes a generation ceiling. When that ceiling falls below what a model needs to finish, the harness records no answer, and an exact match scorer cannot tell an absent answer from a wrong one.</p>
+
+<div class="flag">
+  <span class="tag">How we found it</span>
+  <p>Our first run scored Nemotron at <b>0 out of 12</b>. Reading the raw generations showed the model mid derivation at the cut, having already correctly enumerated every participant constraint. Had we trusted the number instead of the text, we would have published a false result in good faith, and the harness, not the model, would have been at fault.</p>
+</div>
+
+<figure>
+  <img src="fig1_token_budget.png" alt="Two stacked panels. Above, solve rate against output token ceiling: Nemotron rises steeply from near zero while Claude rises more gently. Below, the fraction of generations truncated at the ceiling: Nemotron falls from almost one to near zero, mirroring the panel above.">
+  <figcaption><b>Figure 1.</b> Solve rate against the output token ceiling (a), and the mechanism behind it (b). Bars are 95% Wilson intervals. The accuracy curve is the mirror image of the truncation curve, which is what separates this from test time compute scaling: the model is not reasoning better with more tokens, it is being allowed to finish at all.</figcaption>
+</figure>
+
+<h2>The ceiling sweep</h2>
+
+<div class="scroll">
+<table>
+  <caption>Solve rate, truncation rate, and solve rate conditional on the generation being allowed to finish. Errors are provider 429 and 503 responses, excluded from every rate: a call that never reached the model produced no answer to score.</caption>
+  <thead><tr><th>Model</th><th>Ceiling</th><th>Solve</th><th>Truncated</th><th>Conditional</th><th>n</th><th>Err</th></tr></thead>
+  <tbody>
+    <tr><td>Nemotron Super</td><td>512</td><td class="hi">1.5%</td><td>98.5%</td><td>100.0%</td><td>65</td><td>0</td></tr>
+    <tr><td>Nemotron Super</td><td>1024</td><td>17.5%</td><td>82.5%</td><td>85.7%</td><td>40</td><td>20</td></tr>
+    <tr><td>Nemotron Super</td><td>2048</td><td>50.0%</td><td>46.2%</td><td>85.7%</td><td>27</td><td>33</td></tr>
+    <tr><td>Nemotron Super</td><td>4096</td><td class="hi">76.0%</td><td>16.0%</td><td>90.5%</td><td>25</td><td>40</td></tr>
+    <tr><td>Claude Haiku 4.5</td><td>512</td><td>46.2%</td><td>46.2%</td><td>82.9%</td><td>65</td><td>0</td></tr>
+    <tr><td>Claude Haiku 4.5</td><td>1024</td><td>78.3%</td><td>3.3%</td><td>81.0%</td><td>60</td><td>0</td></tr>
+    <tr><td>Claude Haiku 4.5</td><td>2048</td><td>66.7%</td><td>0.0%</td><td>66.7%</td><td>60</td><td>0</td></tr>
+    <tr><td>Claude Haiku 4.5</td><td>4096</td><td>80.0%</td><td>0.0%</td><td>80.0%</td><td>65</td><td>0</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Nemotron's headline accuracy ranges across <b>74 percentage points</b> as the ceiling moves. Its conditional accuracy, computed over only the generations allowed to finish, stays between 85.7% and 100% throughout. The headline number is measuring the harness, not the model.</p>
+
+<h2>Detecting truncation is harder than it looks</h2>
+
+<p>The obvious check is to compare the emitted token count against the ceiling. That test is wrong for any model reasoning in hidden tokens, and it fails in the direction that makes a model look worse.</p>
+
+<p>Instrumenting the vendor's full token accounting shows why. At a ceiling where it runs to completion, Gemini 3.5 Flash emits <b>21</b> visible tokens per item while spending <b>1,344</b> reasoning tokens absent from that count. True generation spend is roughly <b>65 times</b> what the output token field reports.</p>
+
+<pre>ceiling 512, visible output tokens: 21    -> naive check: not truncated
+              hidden thinking tokens: 1344  -> real spend: ~1365 tokens
+                                                512 cannot hold it</pre>
+
+<p>Truncation at 512 is therefore not merely possible, it is arithmetically unavoidable. The raw generations agree: <code>'Here is the proposed time: Monday, 12:00 - 1'</code>, cut mid answer, while the field an evaluator would naturally check reported no truncation at all. We take the vendor's finish reason as authoritative and treat any token based rule as a fallback.</p>
+
+<h2>What separates the models: not much</h2>
+
+<figure>
+  <img src="fig3_efficiency.png" alt="Scatter of solve rate against mean output tokens per task. Claude sits at low token spend, Nemotron at roughly four times the spend for a comparable solve rate, with overlapping confidence intervals.">
+  <figcaption><b>Figure 3.</b> Solve rate against mean output tokens per task. Accuracy alone does not separate these systems; accuracy per token does. Nemotron spends roughly four times the output tokens and six times the wall clock of Claude for a solve rate whose interval overlaps it.</figcaption>
+</figure>
+
+<div class="flag">
+  <span class="tag">The result we did not want</span>
+  <p>At a matched ceiling, exact McNemar tests on paired per item outcomes separate <b>none</b> of the model pairs. Nemotron against Claude is 4 versus 5 discordant items. We report this because an earlier version of our own analysis counted provider rate limit errors as wrong answers and produced a confident <code>p &lt; 0.0001</code> that was entirely infrastructure noise.</p>
+</div>
+
+<p>Run to run variation reinforces the caution. Nemotron at temperature zero scored 98.3% of items identically across two independent seeded runs. Claude, which we could not pin to temperature zero because its SDK no longer exposes the parameter, agreed on only 62.5%. A single accuracy figure for a model at a nondeterministic temperature is a draw from a distribution whose spread is not small.</p>
+
+<h2>What we recommend</h2>
+
+<p>The fix is small and cheap. Evaluation reports should state the generation ceiling alongside accuracy, and verify it binds on no model before comparing any two. One statistic suffices: the fraction of generations that terminate at the ceiling rather than at a stop token. A model whose truncation rate is materially above zero has not been measured, it has been cut off, and its accuracy carries no information about its planning ability.</p>
+
+<p>This interacts badly with two current trends. Models increasingly reason in the open or in hidden tokens, and harnesses increasingly cap output to control cost. Those pressures push in opposite directions, and the resulting headline number is quietly sensitive to a parameter that is rarely reported at all.</p>
+
+<h2>Contributions</h2>
+<ol class="contrib">
+  <li>The generation ceiling isolated as an experimental variable on an established benchmark, moving one model across 74 accuracy points.</li>
+  <li>Truncation rate and conditional accuracy as reporting statistics that separate planning failure from harness failure.</li>
+  <li>Evidence that the obvious truncation check is unsound for models reasoning in hidden tokens, with the 65x under-report measured.</li>
+  <li>Accuracy reported jointly with output spend and latency, on a scorer validated against published numbers before any comparison.</li>
+  <li>Run to run variance quantified from a seeded replication.</li>
+</ol>
+
+<h2>Limitations</h2>
+
+<p><b>Contamination is not controlled.</b> NATURAL PLAN has been public since 2024 and may appear in any of these models' training data. Exposure is symmetric across models, and the headline result is a within model effect, but we make no decontamination claim.</p>
+
+<p><b>Sample loss correlates with the swept variable.</b> The provider returned 429 and 503 at a rate rising with the ceiling, because larger ceilings mean longer generations and more concurrent requests. Higher ceiling cells therefore rest on fewer retained items. A dropped call produced no output at all, independent of whether that output would have been correct, so we do not believe this biases direction, but it costs precision exactly where we would most want it.</p>
+
+<p><b>Scope.</b> One task, one benchmark, two models in the primary comparison. Gemini results are preliminary: its free tier permits twenty requests per day for that model, which is not a sample size.</p>
+
+<h2>Reproducing this</h2>
+
+<pre>python scripts/run_naturalplan.py --per-bucket 10 --shots 5 \
+    --max-tokens 512 1024 2048 4096 --models nemotron claude
+python scripts/make_figures.py      # figures, tables, every quoted number
+python scripts/check_paper.py       # static check before submission</pre>
+
+<p>Scoring reproduces the behaviour of the official evaluator from the benchmark repository. We validated it before running anything: it scores the reference predictions shipped with the dataset at 48.9%, against 48% reported in the original work. Sampling is seeded and stratified by participant count, because the raw set is half two participant items and a uniform sample would mostly measure the easiest bucket.</p>
+
+<h2>References</h2>
+<ol class="refs">
+  <li>Zheng et al. <i>NATURAL PLAN: Benchmarking LLMs on Natural Language Planning.</i> arXiv:2406.04520, 2024.</li>
+  <li>Valmeekam et al. <i>PlanBench.</i> NeurIPS Datasets and Benchmarks, 2023.</li>
+  <li>Snell et al. <i>Scaling LLM Test-Time Compute Optimally.</i> arXiv:2408.03314, 2024.</li>
+  <li>Sainz et al. <i>NLP Evaluation in Trouble: On the Need to Measure LLM Data Contamination.</i> Findings of EMNLP, 2023.</li>
+  <li>Wilson. <i>Probable Inference, the Law of Succession, and Statistical Inference.</i> JASA 22(158), 1927.</li>
+</ol>
+
+<footer>
+  Every number on this page is generated from the per call records, not typed by hand.<br>
+  Benchmark data and evaluator: google-deepmind/natural-plan, Apache-2.0 and CC-BY.
+</footer>
+
+</div>
