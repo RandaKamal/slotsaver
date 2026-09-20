@@ -1,9 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from app.agents.mock_store import BUSINESS_POLICY, PATIENTS, RECOVERY_PLANS, new_plan_id
 from app.agents.nemotron.incentive import decide_incentive
 from app.agents.nemotron.ranker import rank_candidates
+from app.db.models.appointment import Appointment
+from app.db.session import get_db
+from app.services.recovery_matcher import find_candidates
 
 router = APIRouter(prefix="/api/recovery", tags=["recovery"])
 
@@ -83,3 +87,72 @@ def apply_incentive(plan_id: str) -> dict:
     plan["current_candidate_index"] = 0
     plan["status"] = "pending"
     return plan
+
+
+class CancellationRequest(BaseModel):
+    slot_id: int
+
+
+@router.post("/from-cancellation")
+def recover_from_cancellation(
+    payload: CancellationRequest, db: Session = Depends(get_db)
+) -> dict:
+    """The whole product in one call: a booked slot frees up, and we find who wants it.
+
+    Frees the slot, selects patients whose STORED INTENT fits it (deterministic,
+    see recovery_matcher), then has Nemotron rank the survivors. Without stored
+    intent this slot simply goes empty - nobody knows who to call.
+    """
+    slot = db.get(Appointment, payload.slot_id)
+    if slot is None:
+        raise HTTPException(status_code=404, detail=f"No such slot: {payload.slot_id}")
+
+    previous_holder = slot.customer_id
+    slot.status = "available"
+    slot.customer_id = None
+    db.commit()
+    db.refresh(slot)
+
+    eligible, excluded = find_candidates(db, slot.start_time, slot.provider)
+
+    open_slot = {
+        "slot_id": slot.id,
+        "provider": slot.provider,
+        "service_type": slot.service,
+        "start": slot.start_time.isoformat(),
+        "duration_min": slot.duration_minutes,
+        "price": slot.price,
+    }
+
+    if not eligible:
+        return {
+            "open_slot": open_slot,
+            "cancelled_by": previous_holder,
+            "eligible": [],
+            "excluded": excluded,
+            "plan_id": None,
+            "revenue_at_risk": slot.price,
+            "message": "No stored intent matches this slot - it would go unfilled.",
+        }
+
+    ranking = rank_candidates(open_slot, eligible)
+    plan_id = new_plan_id()
+    plan = {
+        "plan_id": plan_id,
+        "open_slot": open_slot,
+        "candidates": ranking["candidates"],
+        "ranked_candidate_ids": ranking["ranked_candidate_ids"],
+        "current_candidate_index": 0,
+        "stage": "NORMAL",
+        "selected_incentive": None,
+        "status": "pending",
+    }
+    RECOVERY_PLANS[plan_id] = plan
+
+    return {
+        **plan,
+        "cancelled_by": previous_holder,
+        "eligible": eligible,
+        "excluded": excluded,
+        "revenue_at_risk": slot.price,
+    }

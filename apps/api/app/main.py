@@ -15,9 +15,13 @@ from app.api.routes import (
     voice,
 )
 from app.db import models  # noqa: F401 - registers tables on Base before create_all
+from app.db.migrate import ensure_columns
 from app.db.session import Base, engine
 
 Base.metadata.create_all(bind=engine)
+# create_all skips tables that already exist, so columns added later need this.
+for _added in ensure_columns(engine):
+    print(f"[db] added missing column {_added}")
 
 app = FastAPI(title="SlotSaver API")
 

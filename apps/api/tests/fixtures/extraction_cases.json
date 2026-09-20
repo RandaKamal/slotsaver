@@ -1,0 +1,65 @@
+{
+  "_note": "Cases stress the fields that decide cancellation-recovery eligibility. Labels cover only the fields listed per case; anything unlisted is not graded. 'today' is fixed so valid_until is deterministic.",
+  "today": "2026-09-19",
+  "cases": [
+    {
+      "id": "germany_monday_6pm",
+      "note": "Verbatim from the first real voice call. Every field here was lost in production.",
+      "transcript": "I'm only available at 6:00 p.m. on Monday, and after that date, I'll be flying back to Germany. Let me know once that slot opens. I'll just cancel it out completely.",
+      "context": "Patient asked to see Dr. Patel specifically. Agent said no Monday evening slots with Dr. Patel exist.",
+      "expect": {"notify_if_opens": true, "requested_time": "18:00", "valid_until": "2026-09-21", "soft_preferences.preferred_provider": "Dr. Patel"}
+    },
+    {
+      "id": "cancellation_callback",
+      "transcript": "Nothing works this week, but call me the second you get a cancellation. Any time, any doctor.",
+      "expect": {"notify_if_opens": true, "soft_preferences.provider_flexible": true}
+    },
+    {
+      "id": "no_callback_wanted",
+      "note": "Adversarial: must NOT set notify_if_opens just because a slot was discussed.",
+      "transcript": "Tuesday at ten is fine, book it. Don't call me about anything else.",
+      "expect": {"notify_if_opens": false}
+    },
+    {
+      "id": "surgery_deadline",
+      "note": "LABEL CORRECTED: was 2026-10-03. 'Before' the 3rd means the last useful day is the 2nd. The original label was wrong on its own terms.",
+      "transcript": "I need to be seen before my surgery on October 3rd, after that it's pointless. Mornings only.",
+      "expect": {"notify_if_opens": false, "valid_until": "2026-10-02"}
+    },
+    {
+      "id": "only_fridays",
+      "note": "Tests the only-X-day inversion into excluded_days.",
+      "transcript": "Fridays are the only day I can ever come in.",
+      "expect": {"hard_constraints.excluded_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"]}
+    },
+    {
+      "id": "provider_from_context_only",
+      "note": "Provider is named ONLY in earlier conversation, never in the final sentence.",
+      "transcript": "Any afternoon next week works, and let me know if something frees up sooner.",
+      "context": "Patient said earlier: I've been seeing Dr. Lee for years and won't switch.",
+      "expect": {"notify_if_opens": true, "soft_preferences.preferred_provider": "Dr. Lee", "soft_preferences.provider_flexible": false}
+    },
+    {
+      "id": "relative_expiry",
+      "note": "LABEL CORRECTED: was 2026-10-02, which is the week AFTER next. Today is Sat 2026-09-19, so next week is Sep 21-27 and ends Sep 27.",
+      "transcript": "I move away at the end of next week so anything after that is no good. Afternoons preferred, and ring me if there's a cancellation.",
+      "expect": {"notify_if_opens": true, "valid_until": "2026-09-27"}
+    },
+    {
+      "id": "plain_booking_no_intent",
+      "note": "Adversarial: nothing to extract. Model must not invent constraints.",
+      "transcript": "Yes, that time works for me. Thanks.",
+      "expect": {"notify_if_opens": false, "valid_until": null, "requested_time": null}
+    },
+    {
+      "id": "specific_time_and_callback",
+      "transcript": "I want the 2:30 slot with Dr. Patel. If it's taken, tell me the moment it opens up.",
+      "expect": {"notify_if_opens": true, "requested_time": "14:30", "soft_preferences.preferred_provider": "Dr. Patel"}
+    },
+    {
+      "id": "excluded_provider",
+      "transcript": "Anyone except Dr. Lee please, afternoons, and call me if a cancellation comes in.",
+      "expect": {"notify_if_opens": true, "hard_constraints.excluded_providers": ["Dr. Lee"]}
+    }
+  ]
+}

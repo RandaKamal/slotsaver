@@ -1,7 +1,9 @@
 import os
+import random
+import time
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
 
 from app.agents.json_utils import extract_json_object
 
@@ -15,6 +17,24 @@ nim_client = OpenAI(
     timeout=60.0,
     max_retries=1,
 )
+
+
+# NVIDIA's shared endpoint returns 503 "Service temporarily overloaded" under
+# concurrency. These are transient and worth retrying with backoff; a bad
+# request or auth failure is not, and is re-raised immediately.
+_TRANSIENT = (InternalServerError, RateLimitError, APITimeoutError, APIConnectionError)
+
+
+def _with_backoff(fn, attempts: int = 4, base: float = 1.5):
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except _TRANSIENT:
+            if attempt == attempts - 1:
+                raise
+            # Jitter so parallel callers don't retry in lockstep and re-collide.
+            time.sleep(base ** attempt + random.uniform(0, 0.75))
+    raise RuntimeError("unreachable")
 
 
 def call_nim(

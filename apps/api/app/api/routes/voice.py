@@ -1,29 +1,45 @@
 import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.db.models.preference import PreferenceRecord
 from app.db.session import get_db
 from app.schemas.appointment import AppointmentSlot, BookAppointmentRequest, BookedAppointment
 from app.schemas.memory import PreferenceRecordResponse, VoicePreferenceRequest
 from app.services.appointment_service import TimeOfDay, book_slot, get_available_slots
-from app.services.preference_service import extract_preferences, save_preference_record
+from app.services.preference_service import run_extraction, save_pending_record
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 
 
 @router.post("/preferences", response_model=PreferenceRecordResponse)
 def save_scheduling_intent(
-    payload: VoicePreferenceRequest, db: Session = Depends(get_db)
+    payload: VoicePreferenceRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
 ) -> PreferenceRecordResponse:
     """Called by the ElevenLabs `save_scheduling_intent` tool.
 
-    Forwards the raw wording to Kevin's /api/preferences/extract and stores
-    both the wording and the structured result it returns.
+    Returns as soon as the patient's wording is safely stored. Nemotron runs
+    afterwards in a background task, so the voice agent is never left waiting
+    ~12s mid-call for a model response.
     """
 
-    extracted = extract_preferences(payload.patient_id, payload.raw_text)
-    record = save_preference_record(db, payload.patient_id, payload.raw_text, extracted)
+    record = save_pending_record(db, payload.patient_id, payload.raw_text, payload.context)
+    background_tasks.add_task(run_extraction, record.id)
+    return PreferenceRecordResponse.model_validate(record)
+
+
+@router.get("/preferences/{record_id}", response_model=PreferenceRecordResponse)
+def get_scheduling_intent(
+    record_id: int, db: Session = Depends(get_db)
+) -> PreferenceRecordResponse:
+    """Reads back one record, including whether extraction has finished yet."""
+
+    record = db.get(PreferenceRecord, record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"No such preference record: {record_id}")
     return PreferenceRecordResponse.model_validate(record)
 
 

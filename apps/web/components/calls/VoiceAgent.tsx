@@ -54,6 +54,7 @@ function TalkPanel() {
       save_scheduling_intent: async (parameters: {
         patient_id?: string;
         raw_text?: string;
+        context?: string;
       }) => {
         try {
           const res = await fetch(`${API_URL}/api/voice/preferences`, {
@@ -65,6 +66,10 @@ function TalkPanel() {
               // the model should never invent a patient identifier.
               patient_id: parameters.patient_id ?? patientId,
               raw_text: parameters.raw_text,
+              // Earlier turns the final sentence depends on (a doctor named
+              // three turns ago, travel plans). Without it the extractor sees
+              // one orphaned sentence.
+              context: parameters.context,
             }),
           });
           if (!res.ok) {

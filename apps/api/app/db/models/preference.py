@@ -6,7 +6,7 @@ This table stores what the voice layer sends and what Kevin's
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -25,15 +25,29 @@ class PreferenceRecord(Base):
     # Exactly what the patient said, unmodified.
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
 
+    # Earlier conversation the final sentence depends on (provider named three
+    # turns ago, etc). Optional: the tool may not send it.
+    context: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # pending -> extracted | failed. The row is written before Nemotron runs so
+    # the voice agent never waits on it; a background task fills in the rest.
+    status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
+
     # Fields from Kevin's documented /api/preferences/extract contract,
     # pulled out for easy querying.
     hard_constraints: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     soft_preferences: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     expiry: Mapped[str | None] = mapped_column(String, nullable=True)
+    notify_if_opens: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    requested_time: Mapped[str | None] = mapped_column(String, nullable=True)
     contact_preferences: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
 
     # The full response body Kevin's endpoint returned, verbatim, so nothing
     # is lost if his actual response shape has extra/different fields.
-    raw_extraction: Mapped[dict] = mapped_column(JSON, nullable=False)
+    raw_extraction: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    # What the critique pass changed, field by field. Empty when it agreed with
+    # the draft; this is the audit trail for the self-improvement step.
+    refinement_diff: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
