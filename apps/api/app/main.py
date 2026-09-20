@@ -12,6 +12,7 @@ from app.api.routes import (
     benchmark,
     business_profile,
     customers,
+    dev_seed,
     disruptions,
     execution,
     health,
@@ -85,6 +86,7 @@ app.include_router(health.router)
 app.include_router(business_profile.router)
 app.include_router(appointments.router)
 app.include_router(customers.router)
+app.include_router(dev_seed.router)
 app.include_router(disruptions.router)
 app.include_router(preferences.router)
 app.include_router(benchmark.router)
