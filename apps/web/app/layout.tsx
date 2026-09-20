@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata = {
-  title: "Relay",
-  description: "AI Recovery Engine for Service Businesses",
+  title: "SlotSaver | Dashboard",
+  description: "Fewer empty slots. Shorter wait times. Cancellation recovery for medical clinics.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
