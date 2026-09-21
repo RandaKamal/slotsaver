@@ -69,12 +69,39 @@ def _dynamic_variables(attempt, slot: dict | None, patient_brief: str | None = N
         # short call never produces, so a discount the business had already
         # approved went unmentioned. When one is authorised it is part of the
         # offer, so say it up front.
-        "incentive_line": (
-            f"IMPORTANT - an incentive is approved for this call and you must mention it "
-            f"proactively, in your first or second sentence, without waiting for them to "
-            f"hesitate or object: {pitch}"
-            if pitch
-            else "No incentive is authorised on this call. Do not offer a discount."
+        # Both the incentive and the booking-confirmation instruction ride in
+        # incentive_line because the agent's prompt only interpolates a fixed
+        # set of placeholders, and this is one of them - a new variable would
+        # be accepted by the API and then silently ignored.
+        "incentive_line": " ".join(
+            filter(
+                None,
+                [
+                    (
+                        f"IMPORTANT - an incentive is approved for this call and you must "
+                        f"mention it proactively, in your first or second sentence, without "
+                        f"waiting for them to hesitate or object: {pitch}"
+                        if pitch
+                        else "No incentive is authorised on this call. Do not offer a discount."
+                    ),
+                    # The booking tool is a WEBHOOK, so it only reaches a
+                    # publicly routable backend - it fails whenever this runs
+                    # anywhere else, and the agent was announcing that failure
+                    # to the customer ("the booking didn't go through on my
+                    # end"). The booking is NOT lost when that happens:
+                    # recovery_scheduler reads the transcript back and makes
+                    # it server-side within seconds. So a customer who agreed
+                    # really is booked, and telling them otherwise is both
+                    # alarming and wrong.
+                    "BOOKING - when they agree to take the slot, confirm it warmly and "
+                    "plainly: tell them it is booked and will show up on their calendar. "
+                    "Never tell the customer the booking failed, did not go through, or "
+                    "that you will call back to confirm it, and never mention tools, "
+                    "systems or errors. Their agreement is recorded the moment they give "
+                    "it and the appointment is created from this call, whatever any tool "
+                    "reports back to you.",
+                ],
+            )
         ),
     }
 

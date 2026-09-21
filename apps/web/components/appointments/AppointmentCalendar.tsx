@@ -206,6 +206,93 @@ export function AppointmentCalendar() {
     dialog.current?.close();
     setDraft(null);
   }
+  /** Cancels the appointment the editor is open on, server-side.
+   *
+   *  Deliberately NOT driven by the form's submit event. It used to be, and
+   *  whether a cancellation happened depended on reading
+   *  nativeEvent.submitter - null for a keyboard submit or a re-dispatched
+   *  one - and on the whole form passing validAppointment first. Neither has
+   *  anything to do with freeing a slot: an owner cancelling a real booking
+   *  must not be blocked because some unrelated field is invalid, and a
+   *  cancellation must never be inferred.
+   */
+  async function cancelDraft() {
+    if (!draft) return;
+    const serverId = serverIdOf(draft);
+    if (serverId === undefined) {
+      // A row that only exists in the browser (added in the UI, never saved)
+      // has no server record to cancel - drop it locally and say so, rather
+      // than silently doing nothing.
+      setEvents((current) => current.map((item) => item.id === draft.id ? { ...item, status: "cancelled" } : item));
+      setNotice("This appointment only existed in the calendar, so there was nothing to recover.");
+      closeEditor();
+      return;
+    }
+
+    // Only the cancellation itself is awaited - it's a single guarded UPDATE
+    // and it's the part the owner is actually waiting on. Recovery is a
+    // CONSEQUENCE of it (Nemotron ranking, the incentive gate, the call
+    // brief: three or four model calls, tens of seconds when the endpoint is
+    // throttled), so awaiting it here froze the dialog on "Cancelling…" for
+    // the whole pipeline.
+    setCancelling(true);
+    setError("");
+    try {
+      await cancelAppointment(serverId);
+    } catch {
+      setError("Could not reach the server to cancel this appointment. Try again.");
+      setCancelling(false);
+      return;
+    }
+    setCancelling(false);
+    setEvents((current) => current.map((item) => item.id === draft.id ? { ...item, status: "cancelled" } : item));
+    setRecoveryId(draft.id);
+    setNotice(`${draft.patient}’s appointment is cancelled — live recovery is starting below.`);
+    closeEditor();
+
+    // Kicks recovery off directly rather than waiting on the autonomous
+    // scheduler. Fired once and not awaited: the panel below polls for the
+    // plan and shows progress as it arrives. run_recovery claims the slot
+    // before it ranks, so this racing the scheduler can no longer produce
+    // two plans calling the same people.
+    recoverFromCancellation(serverId)
+      .then((plan) => setRecoveryPlans((current) => ({ ...current, [serverId]: plan })))
+      .catch(() => { /* the panel keeps polling; the scheduler is the backstop */ });
+  }
+
+  /** One click: free the next booked slot in view and start recovery on it.
+   *
+   *  Same two calls the editor's cancel makes - this only saves opening the
+   *  appointment first, which matters when the whole point is to show the
+   *  chain start from a standing position.
+   */
+  async function startLiveRecovery() {
+    const target = visible
+      .filter((event) => event.status === "booked" && serverIdOf(event) !== undefined)
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0];
+    if (!target) {
+      setError("No booked appointment in this week to open up.");
+      return;
+    }
+    const serverId = serverIdOf(target)!;
+    setCancelling(true);
+    setError("");
+    try {
+      await cancelAppointment(serverId);
+    } catch {
+      setError("Could not reach the server to open this slot. Try again.");
+      setCancelling(false);
+      return;
+    }
+    setCancelling(false);
+    setEvents((current) => current.map((item) => item.id === target.id ? { ...item, status: "cancelled" } : item));
+    setRecoveryId(target.id);
+    setNotice(`${timeLabel(target.time)} ${target.provider} is now open — finding the best match.`);
+    recoverFromCancellation(serverId)
+      .then((plan) => setRecoveryPlans((current) => ({ ...current, [serverId]: plan })))
+      .catch(() => { /* the panel keeps polling; the scheduler is the backstop */ });
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft) return;
@@ -226,42 +313,14 @@ export function AppointmentCalendar() {
       return;
     }
 
-    const serverId = serverIdOf(draft);
-    if (isCancel && serverId !== undefined) {
-      // Only the cancellation itself is awaited - it's a single guarded
-      // UPDATE and it's the part the owner is actually waiting on. Recovery
-      // is a CONSEQUENCE of it (Nemotron ranking, the incentive gate, the
-      // call brief: three or four model calls, tens of seconds when the
-      // endpoint is throttled), so awaiting it here froze the dialog on
-      // "Cancelling…" for the whole pipeline.
-      //
-      // It's kicked off without awaiting purely to skip the wait for the
-      // next autonomous scheduler tick - if this request fails outright the
-      // scheduler picks the freed slot up anyway. Either way the recovery
-      // panel below polls for the plan and renders its progress as it
-      // arrives, including the "starting recovery" state before one exists.
-      setCancelling(true);
-      setError("");
-      try {
-        await cancelAppointment(serverId);
-      } catch {
-        setError("Could not reach the server to cancel this appointment. Try again.");
-        setCancelling(false);
-        return;
-      }
-      setCancelling(false);
-      setEvents((current) => current.map((item) => item.id === draft.id ? { ...appointment, id: draft.id } : item));
-      setRecoveryId(draft.id);
-      setNotice(`${appointment.patient}’s appointment is cancelled — live recovery is starting below.`);
-      closeEditor();
-
-      // Kicks recovery off directly rather than waiting on the autonomous
-      // scheduler, which is the only path proven to start it reliably here.
-      // Fired once, and not awaited: the panel below polls for the plan and
-      // shows progress as it arrives.
-      recoverFromCancellation(serverId)
-        .then((plan) => setRecoveryPlans((current) => ({ ...current, [serverId]: plan })))
-        .catch(() => { /* the panel keeps polling; the scheduler is the backstop */ });
+    if (isCancel) {
+      // Submit-based cancellation is handled by cancelDraft, wired directly
+      // to the button's onClick. Reaching here means the submitter was not
+      // readable, which used to fall through to the local-only branch below:
+      // the row flipped to "cancelled" on screen, no request was ever sent,
+      // and no error appeared - indistinguishable from a real cancellation
+      // until you noticed nothing was ever called.
+      await cancelDraft();
       return;
     }
 
@@ -352,6 +411,7 @@ export function AppointmentCalendar() {
             <button className={styles.arrow} aria-label="Previous week" onClick={() => setWeek(addDays(week, -7))}>‹</button>
             <button className={styles.arrow} aria-label="Next week" onClick={() => setWeek(addDays(week, 7))}>›</button>
             <h2 aria-live="polite">{dateLabel(week, { month: "short", day: "numeric" })} – {dateLabel(days[6], { month: "short", day: "numeric", year: "numeric" })}</h2>
+            <button className={styles.primary} onClick={startLiveRecovery} disabled={cancelling}>{cancelling ? "Opening…" : "Open next slot"}</button>
           </div>
           <label className={styles.filter}><span className="sr-only">Filter by {workerLabel.toLowerCase()}</span><select aria-label={`Filter by ${workerLabel.toLowerCase()}`} value={provider} onChange={(event) => setProvider(event.target.value)}><option value="all">All {workerLabel.toLowerCase()}s</option>{providerOptions.map((name) => <option key={name}>{name}</option>)}</select><span className={styles.weekBadge}>Week view</span></label>
         </div>
@@ -384,7 +444,7 @@ export function AppointmentCalendar() {
           <div className={styles.fields}><label className={styles.field}>Date<input type="date" name="date" defaultValue={draft.date} required /></label><label className={styles.field}>Start time<input type="time" name="time" min={`${String(openHour).padStart(2, "0")}:00`} max={`${String(closeHour - 1).padStart(2, "0")}:45`} defaultValue={draft.time} required /></label></div>
           <div className={styles.fields}><label className={styles.field}>Duration (minutes)<input name="duration" type="number" min="15" max="180" step="1" defaultValue={draft.duration} required /></label><label className={styles.field}>Status<select aria-label="Status" name="status" defaultValue={draft.status}><option value="booked">Booked</option><option value="cancelled">Cancelled</option></select></label></div>
           {error && <p className={styles.error} role="alert">{error}</p>}
-          {confirmDelete ? <div key="delete-confirmation" className={styles.deleteConfirmation}><p>Delete this appointment?</p><button type="button" className={styles.danger} onClick={remove}>Confirm delete</button><button type="button" className={styles.secondary} onClick={(event) => { event.preventDefault(); setConfirmDelete(false); }}>Keep appointment</button></div> : <div key="editor-actions" className={styles.modalActions}>{draft.id && <button type="button" className={styles.delete} onClick={() => setConfirmDelete(true)}>Delete appointment</button>}<button type="button" className={styles.secondary} onClick={closeEditor}>Close</button>{draft.id && draft.status === "booked" && <button type="submit" name="intent" value="cancel-appointment" className={styles.secondary} disabled={cancelling}>{cancelling ? "Cancelling…" : "Cancel appointment"}</button>}<button type="submit" className={styles.primary} disabled={cancelling}>Save appointment</button></div>}
+          {confirmDelete ? <div key="delete-confirmation" className={styles.deleteConfirmation}><p>Delete this appointment?</p><button type="button" className={styles.danger} onClick={remove}>Confirm delete</button><button type="button" className={styles.secondary} onClick={(event) => { event.preventDefault(); setConfirmDelete(false); }}>Keep appointment</button></div> : <div key="editor-actions" className={styles.modalActions}>{draft.id && <button type="button" className={styles.delete} onClick={() => setConfirmDelete(true)}>Delete appointment</button>}<button type="button" className={styles.secondary} onClick={closeEditor}>Close</button>{draft.id && draft.status === "booked" && <button type="button" onClick={cancelDraft} className={styles.secondary} disabled={cancelling}>{cancelling ? "Cancelling…" : "Cancel appointment"}</button>}<button type="submit" className={styles.primary} disabled={cancelling}>Save appointment</button></div>}
         </form>}
       </dialog>
       <dialog ref={importDialog} className={styles.dialog} aria-labelledby="import-title">
